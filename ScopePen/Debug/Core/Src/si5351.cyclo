@@ -1,0 +1,9 @@
+../Core/Src/si5351.c:62:7:si5351_Init	11
+../Core/Src/si5351.c:130:7:si5351_setupPLLInt	1
+../Core/Src/si5351.c:165:7:si5351_setupPLL	19
+../Core/Src/si5351.c:262:7:si5351_setupMultisynthInt	1
+../Core/Src/si5351.c:270:7:si5351_setupRdiv	17
+../Core/Src/si5351.c:398:7:si5351_setupMultisynth	27
+../Core/Src/si5351.c:547:7:si5351_enableOutputs	4
+../Core/Src/si5351.c:567:7:si5351_write8	2
+../Core/Src/si5351.c:589:7:si5351_read8	2
