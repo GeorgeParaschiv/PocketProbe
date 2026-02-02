@@ -20,7 +20,7 @@ class ControlPanel:
         mode_row = QHBoxLayout()
         self.mode_label = QLabel("Mode:")
         self.mode_select = QComboBox()
-        self.mode_select.addItems(["Run", "Stop", "Single"])
+        self.mode_select.addItems(["Run", "Stop"])
         mode_row.addWidget(self.mode_label)
         mode_row.addWidget(self.mode_select)
         self.layout.addLayout(mode_row)
@@ -35,7 +35,7 @@ class ControlPanel:
         self.vert_knob = QDial()
         self.vert_knob.setMinimum(0)
         self.vert_knob.setMaximum(len(self.voltbase_labels) - 1)
-        self.vert_knob.setValue(6)
+        self.vert_knob.setValue(5)
         self.vert_knob.setNotchesVisible(True)
 
         self.horz_label = QLabel("Timebase (s/div)")
@@ -90,6 +90,9 @@ class ControlPanel:
         self._prev_horz_knob = self.horz_knob.value()
         self._prev_vert_off = self.vert_off_slider.value()
         self._prev_horz_off = self.horz_off_slider.value()
+        
+        # Hardware gain multiplier - initialized based on default knob value
+        self.voltage_multiplier = self._calc_multiplier(self.vert_knob.value())
 
         # Connect signals for change detection
         self.vert_knob.valueChanged.connect(self._on_vert_knob_changed)
@@ -97,18 +100,37 @@ class ControlPanel:
         self.vert_off_slider.sliderReleased.connect(self._on_vert_off_released)
         self.horz_off_slider.sliderReleased.connect(self._on_horz_off_released)
 
+    def _label_to_mv(self, val):
+        """Convert knob index to millivolts"""
+        label = self.voltbase_labels[val]
+        if "mV" in label:
+            return int(float(label.replace("mV", "")))
+        elif "V" in label:
+            return int(float(label.replace("V", "")) * 1000)
+        else:
+            return int(float(label) * 1000)
+
+    def _calc_multiplier(self, val):
+        """Calculate hardware gain multiplier based on knob position (matches STM32 thresholds)"""
+        mv = self._label_to_mv(val)
+        if mv <= 100:
+            return 10
+        elif mv <= 500:
+            return 5
+        elif mv <= 2000:
+            return 2
+        else:
+            return 1
+
     def _on_vert_knob_changed(self, val):
         if val != self._prev_vert_knob:
             self._prev_vert_knob = val
-            # Send value in mV
-            label = self.voltbase_labels[val]
-            if "mV" in label:
-                mv = int(float(label.replace("mV", "")))
-            elif "V" in label:
-                mv = int(float(label.replace("V", "")) * 1000)
-            else:
-                mv = int(float(label) * 1000)
-
+            
+            # Update the voltage multiplier
+            self.voltage_multiplier = self._calc_multiplier(val)
+            
+            # Send value in mV to STM32
+            mv = self._label_to_mv(val)
             self.signals.value_changed.emit(self.OP_MAP['V'], mv)
 
     def _on_horz_knob_changed(self, val):
@@ -190,3 +212,7 @@ class ControlPanel:
     
     def getHorzOffset(self):
         return self.horz_off_slider.value()
+
+    def getVoltageMultiplier(self):
+        """Returns the current hardware gain multiplier"""
+        return self.voltage_multiplier

@@ -60,8 +60,8 @@ all: main-build
 main-build: ScopePen.elf secondary-outputs
 
 # Tool invocations
-ScopePen.elf ScopePen.map: $(OBJS) $(USER_OBJS) C:\Users\gpara\STM32CubeIDE\workspace_1.19.0\ScopePen\STM32F446RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "ScopePen.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\gpara\STM32CubeIDE\workspace_1.19.0\ScopePen\STM32F446RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="ScopePen.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -u _printf_float -u _scanf_float -Wl,--start-group -lc -lm -Wl,--end-group
+ScopePen.elf ScopePen.map: $(OBJS) $(USER_OBJS) C:\Users\gpara\Documents\University\FYDP\ScopePen\STM32F446RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "ScopePen.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\gpara\Documents\University\FYDP\ScopePen\STM32F446RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="ScopePen.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -u _printf_float -u _scanf_float -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 

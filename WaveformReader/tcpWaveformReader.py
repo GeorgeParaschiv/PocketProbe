@@ -7,10 +7,24 @@ import time
 TCP_IP = '192.168.4.1'
 TCP_PORT = 8080
 GPIO_MASK = 0x0FFF  # 12-bit mask
-VREF = 5.3
+VREF = 1.5
+BASE_GAIN = 16.666
+BASE_OFFSET = 0.575
 
 def convert(data):
-    return ((((data & GPIO_MASK) - 2048) / 4096) * (2 * VREF))
+    raw = data & GPIO_MASK
+    
+    # Reverse bit order (12 bits)
+    reversed_val = int(f'{raw:012b}'[::-1], 2)
+    
+    # Convert from 12-bit two's complement to signed
+    if reversed_val >= 2048:
+        signed_val = reversed_val - 4096
+    else:
+        signed_val = reversed_val
+    
+    # Convert to voltage
+    return (((signed_val / 2048.0) * VREF) * BASE_GAIN)
 
 class TCPWaveformReader:
     def __init__(self, frame_size, max_queue=10, retry_interval=2):
@@ -19,6 +33,7 @@ class TCPWaveformReader:
         self._stop_event = threading.Event()
         self.sock = None
         self._connected = False
+        self._was_ever_connected = False
         self.retry_interval = retry_interval
         self._thread = threading.Thread(target=self._reader_thread, daemon=True)
         self._thread.start()
@@ -32,8 +47,11 @@ class TCPWaveformReader:
                 self.sock = sock
                 self._connected = True
                 print("TCP connection established.")
+                self._was_ever_connected = True
             except Exception as e:
-                print(f"TCP connect failed: {e}. Retrying in {self.retry_interval}s...")
+                if not self._was_ever_connected:
+                    # First time trying to connect, don't spam
+                    pass
                 time.sleep(self.retry_interval)
 
     def _reader_thread(self):
@@ -54,6 +72,8 @@ class TCPWaveformReader:
                         pass
                 else:
                     # Connection lost, reset and retry
+                    if self._connected:
+                        print("TCP connection lost. Reconnecting...")
                     self._connected = False
                     if self.sock:
                         try:
@@ -62,6 +82,8 @@ class TCPWaveformReader:
                             pass
                         self.sock = None
             except Exception:
+                if self._connected:
+                    print("TCP connection lost. Reconnecting...")
                 self._connected = False
                 if self.sock:
                     try:

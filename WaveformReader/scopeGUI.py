@@ -8,7 +8,7 @@ from measurement import MeasurementManager, MeasurementPanel
 from tcpWaveformReader import TCPWaveformReader
 
 import numpy as np
-from scipy.ndimage import gaussian_filter1d
+from scipy.ndimage import median_filter
 
 class scopeGUI(QMainWindow):
     def __init__(self, frame_size):        
@@ -16,7 +16,6 @@ class scopeGUI(QMainWindow):
 
         self.FRAME_SIZE = frame_size
         self.NUM_FRAMES = 1
-        self.VOLTAGE_DIVIDE = 2
         self.ATTENUATION = 1
 
         self.setWindowTitle("PocketProbe")
@@ -124,8 +123,10 @@ class scopeGUI(QMainWindow):
         self.horz_div_label.setText(hText)
 
         if self.control.getMode() != "Stop":
-            # x_display is always FRAME_SIZE points from 0 to 1
-            x_display = np.linspace(0, 0.00005 * self.NUM_FRAMES, self.FRAME_SIZE)
+            # x_display spans the full visible window (10 divisions)
+            hDiv = self.control.getHorizontalDiv()
+            x_max = self.plot.NUM_HORZ_DIVS * hDiv  # Full window width in seconds
+            x_display = np.linspace(0, x_max, self.FRAME_SIZE)
             # Get y values from waveform reader, keep previous if no new values
             new_y = self.waveform_reader.get_latest_samples()
             
@@ -136,27 +137,11 @@ class scopeGUI(QMainWindow):
             else:
                 y_display = self._prev_y_display
 
-            y_display = (y_display / self.VOLTAGE_DIVIDE) / self.ATTENUATION
+            BASE_OFFSET = 0.575
+            y_display = (y_display / self.control.getVoltageMultiplier() + self.BASE_OFFSET) / self.ATTENUATION
             
-            # Remove outliers using median filtering, then smooth with Gaussian filter
-            y_display = np.clip(y_display, np.percentile(y_display, 1), np.percentile(y_display, 99))
-            #y_display = gaussian_filter1d(y_display, sigma=2)
-            
-            waveform = (x_display, y_display)
-
-            self.plot.update_waveform(waveform)
-            self.measurements.update_data(x_display, y_display)
-            
-        self.measurement_panel.update_display()
-
-    def set_1x_mode(self):
-        self.ATTENUATION = 1
-
-    def set_10x_mode(self):
-        self.ATTENUATION = 10
-            # Remove outliers using median filtering, then smooth with Gaussian filter
-            y_display = np.clip(y_display, np.percentile(y_display, 1), np.percentile(y_display, 99))
-            #y_display = gaussian_filter1d(y_display, sigma=2)
+            # Remove outliers using median filtering
+            y_display = median_filter(y_display, size=4)
             
             waveform = (x_display, y_display)
 
@@ -170,4 +155,3 @@ class scopeGUI(QMainWindow):
 
     def set_10x_mode(self):
         self.ATTENUATION = 10
-

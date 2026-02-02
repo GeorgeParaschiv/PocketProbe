@@ -39,12 +39,22 @@
 #define CS_GPIO_Port GPIOA
 #define CS_Pin GPIO_PIN_4
 
-#define VREF 5.3
+#define VREF 1.5f
+#define BASE_GAIN 16.666f
+#define BASE_OFFSET 0.575f
+
+#define PASSWORD_CODE 0xDEADBEEF
+
+#define DEBUG_ENABLED 0  // Set to 0 to disable debug prints
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-
+#if DEBUG_ENABLED
+    #define DEBUG_PRINT(...) printf(__VA_ARGS__)
+#else
+    #define DEBUG_PRINT(...) ((void)0)
+#endif
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -53,8 +63,6 @@ I2C_HandleTypeDef hi2c1;
 SPI_HandleTypeDef hspi1;
 DMA_HandleTypeDef hdma_spi1_tx;
 DMA_HandleTypeDef hdma_spi1_rx;
-
-UART_HandleTypeDef huart2;
 
 DMA_HandleTypeDef hdma_memtomem_dma2_stream0;
 /* USER CODE BEGIN PV */
@@ -74,9 +82,8 @@ char start_frame = 'S';
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
-static void MX_I2C1_Init(void);
-static void MX_USART2_UART_Init(void);
 static void MX_SPI1_Init(void);
+static void MX_I2C1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -85,7 +92,7 @@ static void MX_SPI1_Init(void);
 /* USER CODE BEGIN 0 */
 int __io_putchar(int ch)
 {
-	HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, HAL_MAX_DELAY);
+	ITM_SendChar(ch);
 	return ch;
 }
 
@@ -96,8 +103,29 @@ static inline uint16_t ADC_ReadWord(void)
 	return (uint16_t)(GPIOC->IDR & GPIO_MASK);
 }
 
-float convert(uint16_t data){
-	return ((float) ((data & GPIO_MASK) - 2048) / 4096) * (2 * VREF);
+float adc_to_voltage(uint16_t raw) {
+    // Mask to 12 bits
+	raw &= 0x0FFF;
+
+	// Reverse bit order (12 bits: bit 0 becomes bit 11, bit 1 becomes bit 10, etc.)
+	uint16_t reversed = 0;
+	for (int i = 0; i < 12; i++) {
+		if (raw & (1 << i)) {
+			reversed |= (1 << (11 - i));
+		}
+	}
+
+	// Convert from two's complement to signed
+	int16_t signed_val;
+	if (reversed & 0x0800) {
+		// Negative: sign-extend from 12 to 16 bits
+		signed_val = (int16_t)(reversed | 0xF000);
+	} else {
+		signed_val = (int16_t)reversed;
+	}
+
+	// Convert to voltage
+	return (((float)signed_val / 2048.0f) * VREF * BASE_GAIN) + BASE_OFFSET;
 }
 
 void sample_gpio_dma()
@@ -127,13 +155,13 @@ void voltage_gain(uint32_t voltage){
         printf("MULTIPLIER = 10\r\n");
     } else if (voltage <= 500) {
         // VOLTAGE MULTIPLIER = 5; GPIOB1 HIGH, GPIOB2 LOW
-        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
-        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_2, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_2, GPIO_PIN_SET);
         printf("MULTIPLIER = 5\r\n");
     } else if (voltage <= 2000) {
         // VOLTAGE MULTIPLIER = 2; GPIOB1 LOW, GPIOB2 HIGH
-        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_RESET);
-        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_2, GPIO_PIN_SET);
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_2, GPIO_PIN_RESET);
         printf("MULTIPLIER = 2\r\n");
     } else {
         // VOLTAGE_MULTIPLIER = 1; GPIOB1 LOW, GPIOB2 LOW
@@ -142,10 +170,19 @@ void voltage_gain(uint32_t voltage){
         printf("MULTIPLIER = 1\r\n");
     }
 
+    // Average first 100 points
+    		float sum = 0.0f;
+    		for (int i = 0; i < 100; ++i) {
+    		    sum += adc_to_voltage(gpio_buffer[i]);
+    		}
+    		float avg = sum / 100.0f;
+    		printf("Average: %.4f V\r\n", avg);
+
     return;
 }
 
 void window_scale(uint32_t frames){
+	printf("FRAMES = %lu\r\n", frames);
 	num_frames = frames;
 }
 
@@ -153,30 +190,50 @@ void voltage_offset(uint32_t offset){
 
 }
 
+uint8_t verifyPasscode(uint16_t *rx_buf, size_t len)
+{
+	if (len < 5) return 0;
+
+	uint32_t magic = ((uint32_t)rx_buf[0] << 16) | (uint32_t)rx_buf[1];
+	if (magic != PASSWORD_CODE) return 0;
+
+	return 1;
+}
+
+void parseCommand(uint16_t *rx_buf, uint16_t *identifier, uint32_t *value)
+{
+	// Identifier: swap bytes in rx_buf[2]
+	*identifier = (rx_buf[2] >> 8) | (rx_buf[2] << 8);
+	
+	// Value: rx_buf[3] has low 16 bits, rx_buf[4] has high 16 bits (both byte-swapped)
+	uint16_t val_lo = (rx_buf[3] >> 8) | (rx_buf[3] << 8);
+	uint16_t val_hi = (rx_buf[4] >> 8) | (rx_buf[4] << 8);
+	*value = ((uint32_t)val_hi << 16) | val_lo;
+}
+
 void handle_spi_received_data(uint16_t *rx_buf, size_t len)
 {
-	if (len >= 3) {
-		uint16_t identifier = (rx_buf[0] >> 8) | (rx_buf[0] << 8);
-		uint16_t rx1 = (rx_buf[1] >> 8) | (rx_buf[1] << 8);
-		uint16_t rx2 = (rx_buf[2] >> 8) | (rx_buf[2] << 8);
-		uint32_t value = ((uint32_t)rx2 << 16 | ((uint32_t) rx1));
-		printf("Identifier: %u, Value: %lu\r\n", (uint8_t)identifier, (uint32_t)value);
+	if (!verifyPasscode(rx_buf, len)) return;
 
-		switch(identifier){
-			case 1:
-				voltage_gain(value);
-				return;
-			case 2:
-				window_scale(value);
-				return;
-			case 3:
-				//voltage_offset(value);
-				return;
+	uint16_t identifier;
+	uint32_t value;
 
-			default:
-				return;
-		}
+	parseCommand(rx_buf, &identifier, &value);
+  printf("Identifier: %u, Value: %lu\r\n", identifier, value);
 
+	switch(identifier){
+		case 1:
+			voltage_gain(value);
+			return;
+		case 2:
+			window_scale(value);
+			return;
+		case 3:
+			//voltage_offset(value);
+			return;
+
+		default:
+			return;
 	}
 }
 
@@ -189,7 +246,7 @@ void setup_tx_buffer() {
 void spi_gpio_transfer()
 {
 
-	printf("Starting SPI Transfer\r\n");
+	DEBUG_PRINT("Starting SPI Transfer\r\n");
 
 	setup_tx_buffer();
 
@@ -206,27 +263,20 @@ void spi_gpio_transfer()
 	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_RESET);  // assert CS
 
 	if (status != HAL_OK) {
-		printf("DMA TX FAILED\r\n");
+		DEBUG_PRINT("DMA TX FAILED\r\n");
 	}
 
 	while (!tx_done);  // Wait for TX complete
 
-	printf("Done SPI DMA\r\n");
+	DEBUG_PRINT("SPI Transfer Complete\r\n");
 
 	handle_spi_received_data(spi_rx_buffer, NUM_SAMPLES);
-}
-
-void uart_transmit_buffer(uint16_t *buffer, size_t length)
-{
-	HAL_UART_Transmit(&huart2, (uint8_t *) &start_frame, 1, HAL_MAX_DELAY);
-	HAL_UART_Transmit(&huart2, (uint8_t *) buffer, 2 * length, HAL_MAX_DELAY);
 }
 
 void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
 {
 	if (hspi->Instance == SPI1)
 	{
-		printf("SPI Transfer Complete\r\n");
 		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
 		tx_done = 1;
 	}
@@ -235,7 +285,7 @@ void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
 void dma_transfer_complete_callback(DMA_HandleTypeDef *hdma)
 {
 	dma_done = 1;
-	printf("DMA Complete\r\n");
+	DEBUG_PRINT("DMA Complete\r\n");
 }
 
 void register_dma_callbacks()
@@ -275,32 +325,29 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_DMA_Init();
-  MX_I2C1_Init();
-  MX_USART2_UART_Init();
   MX_SPI1_Init();
+  MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
-	si5351_Init();
-
-	// Set clock 0 to 16MHz
-	// 25mhz crystal osc * 32 == 800MHz
-	// 800MHz / 50 = 16Mhz
-	//
-	si5351_setupPLLInt(SI5351_PLL_A, 32);
-	si5351_setupMultisynthInt(0, SI5351_PLL_A, 20);
-	si5351_setupRdiv(0, SI5351_R_DIV_1);
-
-	si5351_enableOutputs(0xFF);
-
-	printf("Clock IC Programmed\r\n");
+//	si5351_Init();
+//
+//	// Set clock 0 to 16MHz
+//	// 25mhz crystal osc * 32 == 800MHz
+//	// 800MHz / 50 = 16Mhz
+//	//
+//	si5351_setupPLLInt(SI5351_PLL_A, 32);
+//	si5351_setupMultisynthInt(0, SI5351_PLL_A, 20);
+//	si5351_setupRdiv(0, SI5351_R_DIV_1);
+//
+//	si5351_enableOutputs(0xFF);
 
 	gpio_buffer = (uint16_t *)malloc(50000 * sizeof(uint16_t));
 
 	register_dma_callbacks();
 
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_RESET);
 	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_2, GPIO_PIN_SET);
 
-
-	//uart_transmit_buffer(gpio_buffer, NUM_SAMPLES);
+	printf("Setup Complete\r\n");
 
   /* USER CODE END 2 */
 
@@ -312,9 +359,8 @@ int main(void)
 
 		while(!dma_done);
 
-		for (int i = 0; i < 10; ++i){
-			printf("%X %X\r\n", gpio_buffer[i], gpio_buffer[i] & GPIO_MASK);
-		}
+
+
 		spi_gpio_transfer();
 		HAL_Delay(250);
     /* USER CODE END WHILE */
@@ -440,39 +486,6 @@ static void MX_SPI1_Init(void)
   /* USER CODE BEGIN SPI1_Init 2 */
 
   /* USER CODE END SPI1_Init 2 */
-
-}
-
-/**
-  * @brief USART2 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_USART2_UART_Init(void)
-{
-
-  /* USER CODE BEGIN USART2_Init 0 */
-
-  /* USER CODE END USART2_Init 0 */
-
-  /* USER CODE BEGIN USART2_Init 1 */
-
-  /* USER CODE END USART2_Init 1 */
-  huart2.Instance = USART2;
-  huart2.Init.BaudRate = 115200;
-  huart2.Init.WordLength = UART_WORDLENGTH_8B;
-  huart2.Init.StopBits = UART_STOPBITS_1;
-  huart2.Init.Parity = UART_PARITY_NONE;
-  huart2.Init.Mode = UART_MODE_TX_RX;
-  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
-  if (HAL_UART_Init(&huart2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN USART2_Init 2 */
-
-  /* USER CODE END USART2_Init 2 */
 
 }
 
