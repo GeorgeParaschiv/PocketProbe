@@ -153,7 +153,8 @@ void setup_spi_slave() {
 void setup() {
   Serial.begin(115200);
 
-  while (!Serial) {
+  unsigned long timeout = millis();
+  while (!Serial && (millis() - timeout) < 2000) {
     delay(100);
   }
   delay(1000);
