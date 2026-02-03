@@ -53,11 +53,13 @@ class ControlPanel:
         self.layout.addLayout(div_row)
 
         # --- Vertical Offset slider ---
+        # DAC range: -78 to +78 steps (corresponds to -1V to +1V)
+        # DAC step size: 3.3V/256 ≈ 12.89mV per step
         voffset_row = QHBoxLayout()
         self.vert_off_label = QLabel("Vertical Offset")
         self.vert_off_slider = QSlider(Qt.Horizontal)
-        self.vert_off_slider.setMinimum(-40)
-        self.vert_off_slider.setMaximum(40)
+        self.vert_off_slider.setMinimum(-78)  # -1V in DAC steps
+        self.vert_off_slider.setMaximum(78)   # +1V in DAC steps
         self.vert_off_slider.setValue(0)
         self.vert_off_slider.setTickInterval(1)
         voffset_row.addWidget(self.vert_off_label)
@@ -151,11 +153,14 @@ class ControlPanel:
             self.signals.value_changed.emit(self.OP_MAP['T'], us)
 
     def _on_vert_off_released(self):
-        val = self.getVertOffset()
+        val = self.vert_off_slider.value()  # DAC steps (-78 to +78)
         if val != self._prev_vert_off:
             self._prev_vert_off = val
-            print(int(val*1000 + 4000))
-            self.signals.value_changed.emit(self.OP_MAP['O'], int(val * 1000 + 4000))
+            # Encode signed offset as unsigned: add 78 so range becomes 0-156
+            # ESP32 will subtract 78 to get the actual signed value
+            encoded_val = val + 78
+            print(f"Offset: {val} DAC steps ({val * 12.89:.1f}mV), encoded: {encoded_val}")
+            self.signals.value_changed.emit(self.OP_MAP['O'], encoded_val)
 
     def _on_horz_off_released(self):
         val = self.horz_off_slider.value()
@@ -165,6 +170,28 @@ class ControlPanel:
 
     def on_knob_change(self, callback):
         self.signals.value_changed.connect(callback)
+
+    def send_all_settings(self):
+        """Send all current control values to synchronize with hardware on startup"""
+        # Send vertical division (voltage gain)
+        mv = self._label_to_mv(self.vert_knob.value())
+        self.signals.value_changed.emit(self.OP_MAP['V'], mv)
+        
+        # Send horizontal division (timebase)
+        label = self.timebase_labels[self.horz_knob.value()]
+        if "μs" in label:
+            us = int(float(label.replace("μs", "")))
+        else:
+            us = int(float(label) * 1000000)
+        if us <= 5:
+            us = 1
+        else:
+            us //= 5
+        self.signals.value_changed.emit(self.OP_MAP['T'], us)
+        
+        # Send vertical offset (encoded as unsigned: value + 78)
+        encoded_offset = self.vert_off_slider.value() + 78
+        self.signals.value_changed.emit(self.OP_MAP['O'], encoded_offset)
 
     def getDivisionLabels(self):
         return self.voltbase_labels[self.vert_knob.value()], \
@@ -200,15 +227,8 @@ class ControlPanel:
             return 1.0  # fallback
 
     def getVertOffset(self):
-        
-        offset = self.vert_off_slider.value() * self.getVerticalDiv() / 10
-        
-        if offset > 4:
-            return 4
-        elif offset < -4:
-            return -4
-        else:
-            return offset
+        dac_steps = self.vert_off_slider.value()
+        return dac_steps
     
     def getHorzOffset(self):
         return self.horz_off_slider.value()

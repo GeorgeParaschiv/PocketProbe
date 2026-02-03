@@ -8,10 +8,9 @@ TCP_IP = '192.168.4.1'
 TCP_PORT = 8080
 GPIO_MASK = 0x0FFF  # 12-bit mask
 VREF = 1.5
-BASE_GAIN = 16.666
-BASE_OFFSET = 0.575
 
 def convert(data):
+    """Convert raw ADC data to a normalized value (before gain/offset processing)"""
     raw = data & GPIO_MASK
     
     # Reverse bit order (12 bits)
@@ -23,8 +22,8 @@ def convert(data):
     else:
         signed_val = reversed_val
     
-    # Convert to voltage
-    return (((signed_val / 2048.0) * VREF) * BASE_GAIN)
+    # Return normalized ADC voltage (just VREF scaling, no gain/offset)
+    return (signed_val / 2048.0) * VREF
 
 class TCPWaveformReader:
     def __init__(self, frame_size, max_queue=10, retry_interval=2):

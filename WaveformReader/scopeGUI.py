@@ -17,6 +17,10 @@ class scopeGUI(QMainWindow):
         self.FRAME_SIZE = frame_size
         self.NUM_FRAMES = 1
         self.ATTENUATION = 1
+        
+        # Signal processing constants
+        self.BASE_GAIN = 50/3
+        self.BASE_OFFSET = 0.575
 
         self.setWindowTitle("PocketProbe")
         self.setGeometry(100, 100, 1600, 1000)  # Enlarged window
@@ -95,6 +99,21 @@ class scopeGUI(QMainWindow):
         self.waveform_reader = TCPWaveformReader(frame_size=self.FRAME_SIZE)
         self._prev_y_display = np.zeros(self.FRAME_SIZE)
         self.control.on_knob_change(self.send_knob_packet)
+        
+        # Send default settings once connected
+        self._sync_sent = False
+        self._sync_timer = QTimer()
+        self._sync_timer.setInterval(500)  # Check every 500ms
+        self._sync_timer.timeout.connect(self._check_and_send_defaults)
+        self._sync_timer.start()
+
+    def _check_and_send_defaults(self):
+        """Send default settings once TCP connection is established"""
+        if not self._sync_sent and self.waveform_reader._connected:
+            print("Sending default settings to synchronize with hardware...")
+            self.control.send_all_settings()
+            self._sync_sent = True
+            self._sync_timer.stop()
 
     def send_knob_packet(self, op_code, value):
         # op_code: int, value: int
@@ -137,10 +156,21 @@ class scopeGUI(QMainWindow):
             else:
                 y_display = self._prev_y_display
 
-            BASE_OFFSET = 0.575
-            y_display = (y_display / self.control.getVoltageMultiplier() + self.BASE_OFFSET) / self.ATTENUATION
+            voltage_gain = self.control.getVoltageMultiplier()
+            voltage_offset = self.control.getVertOffset()
             
-            # Remove outliers using median filtering
+            # Step 1: Diff Amp Inverse Function
+            y_display = (y_display + 0.0305928) * 1.0142615313929
+            
+            # Step 2: Subtract Offset Function    
+            #y_display = y_display - (-0.0000019283 * voltage_offset**3 + 0.00000195206 * voltage_offset**2 + 0.0127312 * voltage_offset - 0.00123773)
+            y_display = y_display - (voltage_offset * 0.0122807 - 0.00108)
+            
+            # Step 3: Voltage Division and Base Gain
+            y_display = y_display * (1 / voltage_gain)
+            y_display = y_display * self.BASE_GAIN
+            
+            # Step 4: Remove outliers using median filtering
             y_display = median_filter(y_display, size=4)
             
             waveform = (x_display, y_display)

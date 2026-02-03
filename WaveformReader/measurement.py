@@ -167,4 +167,4 @@ class MeasurementPanel(QWidget):
             label = widget.layout().itemAt(0).widget()
             key = label.text().split(":")[0]
             if key in stats:
-                label.setText(f"{key}: {stats[key]:.3f}")
+                label.setText(f"{key}: {stats[key]:.4f}")

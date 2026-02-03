@@ -125,7 +125,7 @@ float adc_to_voltage(uint16_t raw) {
 	}
 
 	// Convert to voltage
-	return (((float)signed_val / 2048.0f) * VREF * BASE_GAIN) + BASE_OFFSET;
+	return ((float)signed_val / 2048.0f) * VREF;
 }
 
 void sample_gpio_dma()
@@ -176,7 +176,7 @@ void voltage_gain(uint32_t voltage){
     		    sum += adc_to_voltage(gpio_buffer[i]);
     		}
     		float avg = sum / 100.0f;
-    		printf("Average: %.4f V\r\n", avg);
+    		DEBUG_PRINT("Average: %.4f V\r\n", avg);
 
     return;
 }
@@ -359,7 +359,12 @@ int main(void)
 
 		while(!dma_done);
 
-
+		float sum = 0.0f;
+		for (int i = 0; i < 100; ++i) {
+			sum += adc_to_voltage(gpio_buffer[i]);
+		}
+		float avg = sum / 100.0f;
+		printf("Average: %.7f V\r\n", avg);
 
 		spi_gpio_transfer();
 		HAL_Delay(250);

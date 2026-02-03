@@ -74,10 +74,15 @@ class WaveformPlot(pg.PlotWidget):
         self.plotItem.getAxis('bottom').setTicks([x_ticks])
         self.plotItem.getAxis('left').setTicks([y_ticks])
 
-    def setPlotRange(self, vDiv, hDiv):
+    def setPlotRange(self, vDiv, hDiv, vOffset=0):
+        # Shift y-axis by vOffset
+        # Negative offset → shift zero down (subtract from range)
+        # Positive offset → shift zero up (add to range)
+        yMin = round(-vDiv * (self.NUM_VERT_DIVS/2) - vOffset, 3)
+        yMax = round(vDiv * (self.NUM_VERT_DIVS/2) - vOffset, 3)
         self.plotItem.setRange(
             xRange=(0, self.NUM_HORZ_DIVS * hDiv),
-            yRange=(round(-vDiv * (self.NUM_VERT_DIVS/2), 3), round(vDiv * (self.NUM_VERT_DIVS/2), 3))
+            yRange=(yMin, yMax)
         )
 
     def update_waveform(self, waveform):
@@ -86,8 +91,8 @@ class WaveformPlot(pg.PlotWidget):
         vDiv = self.control.getVerticalDiv()
         vOffset = self.control.getVertOffset()
         
-        # Set axis ticks based on division sizes
-        self.setPlotRange(vDiv, hDiv)
+        # Set axis ticks and range (y-axis shifted by offset)
+        self.setPlotRange(vDiv, hDiv, vOffset)
         self.setTicks(hDiv, vDiv)
         
         self.plot.setData(waveform[0], waveform[1])

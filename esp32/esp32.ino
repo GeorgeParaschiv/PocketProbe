@@ -32,6 +32,13 @@
 
 #define PASSWORD_CODE 0xDEADBEEF
 
+// DAC constants for voltage offset
+#define DAC_PLUS_PIN 17
+#define DAC_MINUS_PIN 18
+#define DAC_STEP_VOLTAGE 0.01289f  // 3.3V / 256 = ~12.89mV per step
+#define MAX_OFFSET_VOLTAGE 1.0f    // Maximum offset is 1V
+#define MAX_DAC_VALUE 78           // 1V / 0.01289V ≈ 78 steps
+
 uint8_t * rx_buf;
 uint8_t * tx_buf; 
 
@@ -39,10 +46,34 @@ uint8_t * tx_buf;
 WiFiServer server(TCP_PORT);
 WiFiClient client;
 
+void set_voltage_offset(uint32_t encoded_value) {
+
+  int32_t offset = (int32_t)encoded_value - 78;
+  
+  if (offset > 0) {
+    // Positive offset: use DAC+ only, DAC- = 0
+    uint8_t dac_value = (offset > MAX_DAC_VALUE) ? MAX_DAC_VALUE : (uint8_t)offset;
+    dacWrite(DAC_PLUS_PIN, 225);
+    dacWrite(DAC_MINUS_PIN, 225 - offset);
+    Serial.printf("Offset: +%d DAC steps (DAC+ = %d, DAC- = 0)\n", offset, dac_value);
+  } else if (offset < 0) {
+    // Negative offset: use DAC- only, DAC+ = 0
+    uint8_t dac_value = (-offset > MAX_DAC_VALUE) ? MAX_DAC_VALUE : (uint8_t)(-offset);
+    dacWrite(DAC_PLUS_PIN, 225 + offset);
+    dacWrite(DAC_MINUS_PIN, 225);
+    Serial.printf("Offset: %d DAC steps (DAC+ = 0, DAC- = %d)\n", offset, dac_value);
+  } else {
+    // Zero offset: both DACs = 0
+    dacWrite(DAC_PLUS_PIN, 225);
+    dacWrite(DAC_MINUS_PIN, 225);
+    Serial.println("Offset: 0 (both DACs = 0)");
+  }
+}
+
 void check_client_data() {
   // Non-blocking check for incoming data from client
   if (client && client.connected() && client.available() >= 6) {
-    // Read exactly 5 bytes into the tx_buffer
+    // Read exactly 6 bytes into the tx_buffer
     uint8_t temp_buffer[6];
     int bytes_read = 0;
     
@@ -52,22 +83,29 @@ void check_client_data() {
     }
     
     if (bytes_read == 6) {
-
-      memset(tx_buf, 0, FRAME_SIZE_BYTES);
-      tx_buf[0] = PASSWORD_CODE >> 24;
-      tx_buf[1] = (PASSWORD_CODE >> 16) & 0xFF;
-      tx_buf[2] = (PASSWORD_CODE >> 8) & 0xFF;
-      tx_buf[3] = PASSWORD_CODE & 0xFF;
-      
-      // Copy to tx_buffer
-      memcpy(tx_buf + 4, temp_buffer, 6);
-      
-      // Parse and print the command
+      // Parse the command
       uint16_t op_code = temp_buffer[0] | (temp_buffer[1] << 8);  // Little-endian
       uint32_t value = temp_buffer[2] | (temp_buffer[3] << 8) | 
                        (temp_buffer[4] << 16) | (temp_buffer[5] << 24);
       
       Serial.printf("Command received - OpCode: %u, Value: %lu\n", op_code, value);
+      
+      // Handle offset command (op_code 3) locally on ESP32
+      if (op_code == 3) {
+        set_voltage_offset(value);
+        // Don't forward offset commands to STM32
+        memset(tx_buf, 0, FRAME_SIZE_BYTES);
+      } else {
+        // Forward other commands to STM32 via SPI
+        memset(tx_buf, 0, FRAME_SIZE_BYTES);
+        tx_buf[0] = PASSWORD_CODE >> 24;
+        tx_buf[1] = (PASSWORD_CODE >> 16) & 0xFF;
+        tx_buf[2] = (PASSWORD_CODE >> 8) & 0xFF;
+        tx_buf[3] = PASSWORD_CODE & 0xFF;
+        
+        // Copy to tx_buffer
+        memcpy(tx_buf + 4, temp_buffer, 6);
+      }
     } else {
       Serial.printf("Warning: Only read %d bytes instead of 6\n", bytes_read);
     }
@@ -137,11 +175,9 @@ void setup() {
   pinMode(ADC_CLK_EN, OUTPUT);
   digitalWrite(ADC_CLK_EN, HIGH);
 
-  pinMode(OFFSET_PLUS, OUTPUT);
-  pinMode(OFFSET_MINUS, OUTPUT);
-
-  digitalWrite(OFFSET_PLUS, LOW);
-  digitalWrite(OFFSET_MINUS, LOW);
+  // Initialize DAC outputs for voltage offset (start at 0)
+  dacWrite(DAC_PLUS_PIN, 225);
+  dacWrite(DAC_MINUS_PIN, 225);
 
   setup_wifi();
   setup_spi_slave();
