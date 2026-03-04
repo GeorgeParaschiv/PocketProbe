@@ -115,11 +115,58 @@ class scopeGUI(QMainWindow):
             self._sync_sent = True
             self._sync_timer.stop()
 
+    def _format_packet_info(self, op_code, value):
+        """Format packet information for human-readable logging"""
+        op_names = {
+            1: "Vertical Division",
+            2: "Timebase",
+            3: "Vertical Offset",
+            4: "Horizontal Offset"
+        }
+        
+        op_name = op_names.get(op_code, f"Unknown (op_code={op_code})")
+        
+        if op_code == 1:  # Vertical division
+            # Value is in mV
+            if value >= 1000:
+                formatted_value = f"{value / 1000:.1f}V"
+            else:
+                formatted_value = f"{value}mV"
+            return f"[{op_name}] Setting voltage scale to {formatted_value}"
+            
+        elif op_code == 2:  # Timebase
+            # Value is in μs (after processing: 1, 2, 4, 10, 20, 40, 100, 200)
+            if value < 1000:
+                formatted_value = f"{value}μs"
+            elif value < 1000000:
+                formatted_value = f"{value / 1000:.1f}ms"
+            else:
+                formatted_value = f"{value / 1000000:.3f}s"
+            return f"[{op_name}] Setting timebase to {formatted_value}"
+            
+        elif op_code == 3:  # Vertical offset
+            # Value is encoded (0-156), decode to DAC steps (-78 to +78)
+            dac_steps = value - 78
+            offset_volts = dac_steps * 0.01289  # 3.3V / 256 ≈ 12.89mV per step
+            if offset_volts >= 0:
+                formatted_value = f"+{dac_steps} DAC steps (+{offset_volts*1000:.1f}mV)"
+            else:
+                formatted_value = f"{dac_steps} DAC steps ({offset_volts*1000:.1f}mV)"
+            return f"[{op_name}] Setting offset to {formatted_value}"
+            
+        elif op_code == 4:  # Horizontal offset
+            return f"[{op_name}] Setting horizontal offset to {value}"
+            
+        else:
+            return f"[{op_name}] Raw value: {value}"
+
     def send_knob_packet(self, op_code, value):
         # op_code: int, value: int
         try:
             pkt = pack('<H', op_code) + pack('<I', value)
-            print(f"Packet: {pkt}")
+            # Format packet as hex bytes without \x prefix
+            hex_bytes = ' '.join(f'{b:02X}' for b in pkt)
+            print(f"Packet: {hex_bytes} | {self._format_packet_info(op_code, value)}")
             self.waveform_reader.send_packet(pkt)
         except Exception as e:
             print(f"Failed to send packet: {e}")
@@ -160,11 +207,13 @@ class scopeGUI(QMainWindow):
             voltage_offset = self.control.getVertOffset()
             
             # Step 1: Diff Amp Inverse Function
-            y_display = (y_display + 0.0305928) * 1.0142615313929
+            y_display = (y_display + 0.0446867) * 1.0103551297245
             
-            # Step 2: Subtract Offset Function    
+            # Step 2: Subtract Offset Function 
+            y_display = y_display - 0.0084   
             #y_display = y_display - (-0.0000019283 * voltage_offset**3 + 0.00000195206 * voltage_offset**2 + 0.0127312 * voltage_offset - 0.00123773)
-            y_display = y_display - (voltage_offset * 0.0122807 - 0.00108)
+            #y_display = y_display - (voltage_offset * 0.0122807 - 0.00108)
+            #y_display = y_display + 0.001
             
             # Step 3: Voltage Division and Base Gain
             y_display = y_display * (1 / voltage_gain)

@@ -16,9 +16,6 @@
 #define PIN_SCLK 12
 #define PIN_CS   10
 
-#define OFFSET_PLUS 17
-#define OFFSET_MINUS 18
-
 #define VGA_0 34
 #define VGA_1 35
 
@@ -50,22 +47,25 @@ void set_voltage_offset(uint32_t encoded_value) {
 
   int32_t offset = (int32_t)encoded_value - 78;
   
+  uint8_t BASE_VALUE_PLUS = 57;
+  uint8_t BASE_VALUE_MINUS = 60;
+
   if (offset > 0) {
-    // Positive offset: use DAC+ only, DAC- = 0
-    uint8_t dac_value = (offset > MAX_DAC_VALUE) ? MAX_DAC_VALUE : (uint8_t)offset;
-    dacWrite(DAC_PLUS_PIN, 225);
-    dacWrite(DAC_MINUS_PIN, 225 - offset);
-    Serial.printf("Offset: +%d DAC steps (DAC+ = %d, DAC- = 0)\n", offset, dac_value);
+    // Positive offset: add to DAC+, DAC- = 0
+    uint8_t dac_plus = (offset > MAX_DAC_VALUE) ? MAX_DAC_VALUE : (uint8_t)offset;
+    dacWrite(DAC_PLUS_PIN, BASE_VALUE_PLUS + dac_plus);
+    dacWrite(DAC_MINUS_PIN, BASE_VALUE_MINUS);
+    Serial.printf("Offset: +%d DAC steps (DAC+ = %d, DAC- = 0)\n", offset, dac_plus);
   } else if (offset < 0) {
-    // Negative offset: use DAC- only, DAC+ = 0
-    uint8_t dac_value = (-offset > MAX_DAC_VALUE) ? MAX_DAC_VALUE : (uint8_t)(-offset);
-    dacWrite(DAC_PLUS_PIN, 225 + offset);
-    dacWrite(DAC_MINUS_PIN, 225);
-    Serial.printf("Offset: %d DAC steps (DAC+ = 0, DAC- = %d)\n", offset, dac_value);
+    // Negative offset: add to DAC-, DAC+ = 0
+    uint8_t dac_minus = (-offset > MAX_DAC_VALUE) ? MAX_DAC_VALUE : (uint8_t)(-offset);
+    dacWrite(DAC_PLUS_PIN, BASE_VALUE_PLUS);
+    dacWrite(DAC_MINUS_PIN, BASE_VALUE_MINUS + dac_minus);
+    Serial.printf("Offset: %d DAC steps (DAC+ = 0, DAC- = %d)\n", offset, dac_minus);
   } else {
     // Zero offset: both DACs = 0
-    dacWrite(DAC_PLUS_PIN, 225);
-    dacWrite(DAC_MINUS_PIN, 225);
+    dacWrite(DAC_PLUS_PIN, BASE_VALUE_PLUS);
+    dacWrite(DAC_MINUS_PIN, BASE_VALUE_MINUS);
     Serial.println("Offset: 0 (both DACs = 0)");
   }
 }
@@ -177,8 +177,8 @@ void setup() {
   digitalWrite(ADC_CLK_EN, HIGH);
 
   // Initialize DAC outputs for voltage offset (start at 0)
-  dacWrite(DAC_PLUS_PIN, 225);
-  dacWrite(DAC_MINUS_PIN, 225);
+  dacWrite(DAC_PLUS_PIN, 0);
+  dacWrite(DAC_MINUS_PIN, 0);
 
   setup_wifi();
   setup_spi_slave();

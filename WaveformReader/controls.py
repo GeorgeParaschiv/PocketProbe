@@ -57,19 +57,33 @@ class ControlPanel:
         # DAC step size: 3.3V/256 ≈ 12.89mV per step
         voffset_row = QHBoxLayout()
         self.vert_off_label = QLabel("Vertical Offset")
+        voffset_row.addWidget(self.vert_off_label)
+        
+        # Left arrow button (decrease by 1 DAC step)
+        self.vert_off_left_btn = QPushButton("←")
+        self.vert_off_left_btn.setMaximumWidth(30)
+        self.vert_off_left_btn.clicked.connect(self._on_vert_off_left_clicked)
+        voffset_row.addWidget(self.vert_off_left_btn)
+        
         self.vert_off_slider = QSlider(Qt.Horizontal)
         self.vert_off_slider.setMinimum(-78)  # -1V in DAC steps
         self.vert_off_slider.setMaximum(78)   # +1V in DAC steps
         self.vert_off_slider.setValue(0)
         self.vert_off_slider.setTickInterval(1)
-        voffset_row.addWidget(self.vert_off_label)
         voffset_row.addWidget(self.vert_off_slider)
-        self.layout.addLayout(voffset_row)
+        
+        # Right arrow button (increase by 1 DAC step)
+        self.vert_off_right_btn = QPushButton("→")
+        self.vert_off_right_btn.setMaximumWidth(30)
+        self.vert_off_right_btn.clicked.connect(self._on_vert_off_right_clicked)
+        voffset_row.addWidget(self.vert_off_right_btn)
         
         # --- Zero button for Vertical Offset ---
         self.vert_zero_btn = QPushButton("Zero")
         self.vert_zero_btn.clicked.connect(lambda: (self.vert_off_slider.setValue(0), self._on_vert_off_released()))
         voffset_row.addWidget(self.vert_zero_btn)
+        
+        self.layout.addLayout(voffset_row)
 
         # --- Horizontal Offset slider ---
         hoffset_row = QHBoxLayout()
@@ -151,6 +165,20 @@ class ControlPanel:
                 us //= 5
              
             self.signals.value_changed.emit(self.OP_MAP['T'], us)
+
+    def _on_vert_off_left_clicked(self):
+        """Decrease vertical offset by 1 DAC step"""
+        current_val = self.vert_off_slider.value()
+        new_val = max(self.vert_off_slider.minimum(), current_val - 1)
+        self.vert_off_slider.setValue(new_val)
+        self._on_vert_off_released()
+
+    def _on_vert_off_right_clicked(self):
+        """Increase vertical offset by 1 DAC step"""
+        current_val = self.vert_off_slider.value()
+        new_val = min(self.vert_off_slider.maximum(), current_val + 1)
+        self.vert_off_slider.setValue(new_val)
+        self._on_vert_off_released()
 
     def _on_vert_off_released(self):
         val = self.vert_off_slider.value()  # DAC steps (-78 to +78)

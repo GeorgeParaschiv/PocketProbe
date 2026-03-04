@@ -1573,14 +1573,14 @@ void voltage_gain(uint32_t voltage){
  80011c2:	2b64      	cmp	r3, #100	@ 0x64
  80011c4:	d80d      	bhi.n	80011e2 <voltage_gain+0x2a>
         // VOLTAGE MULTIPLIER = 10; GPIOB1 HIGH, GPIOB2 HIGH
-        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_SET);
  80011c6:	2201      	movs	r2, #1
- 80011c8:	2102      	movs	r1, #2
+ 80011c8:	2120      	movs	r1, #32
  80011ca:	4833      	ldr	r0, [pc, #204]	@ (8001298 <voltage_gain+0xe0>)
  80011cc:	f001 fd9c 	bl	8002d08 <HAL_GPIO_WritePin>
-        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_2, GPIO_PIN_SET);
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_SET);
  80011d0:	2201      	movs	r2, #1
- 80011d2:	2104      	movs	r1, #4
+ 80011d2:	2140      	movs	r1, #64	@ 0x40
  80011d4:	4830      	ldr	r0, [pc, #192]	@ (8001298 <voltage_gain+0xe0>)
  80011d6:	f001 fd97 	bl	8002d08 <HAL_GPIO_WritePin>
         printf("MULTIPLIER = 10\r\n");
@@ -1592,14 +1592,14 @@ void voltage_gain(uint32_t voltage){
  80011e4:	f5b3 7ffa 	cmp.w	r3, #500	@ 0x1f4
  80011e8:	d80d      	bhi.n	8001206 <voltage_gain+0x4e>
         // VOLTAGE MULTIPLIER = 5; GPIOB1 HIGH, GPIOB2 LOW
-        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_RESET);
  80011ea:	2200      	movs	r2, #0
- 80011ec:	2102      	movs	r1, #2
+ 80011ec:	2120      	movs	r1, #32
  80011ee:	482a      	ldr	r0, [pc, #168]	@ (8001298 <voltage_gain+0xe0>)
  80011f0:	f001 fd8a 	bl	8002d08 <HAL_GPIO_WritePin>
-        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_2, GPIO_PIN_SET);
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_SET);
  80011f4:	2201      	movs	r2, #1
- 80011f6:	2104      	movs	r1, #4
+ 80011f6:	2140      	movs	r1, #64	@ 0x40
  80011f8:	4827      	ldr	r0, [pc, #156]	@ (8001298 <voltage_gain+0xe0>)
  80011fa:	f001 fd85 	bl	8002d08 <HAL_GPIO_WritePin>
         printf("MULTIPLIER = 5\r\n");
@@ -1611,14 +1611,14 @@ void voltage_gain(uint32_t voltage){
  8001208:	f5b3 6ffa 	cmp.w	r3, #2000	@ 0x7d0
  800120c:	d80d      	bhi.n	800122a <voltage_gain+0x72>
         // VOLTAGE MULTIPLIER = 2; GPIOB1 LOW, GPIOB2 HIGH
-        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_SET);
  800120e:	2201      	movs	r2, #1
- 8001210:	2102      	movs	r1, #2
+ 8001210:	2120      	movs	r1, #32
  8001212:	4821      	ldr	r0, [pc, #132]	@ (8001298 <voltage_gain+0xe0>)
  8001214:	f001 fd78 	bl	8002d08 <HAL_GPIO_WritePin>
-        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_2, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_RESET);
  8001218:	2200      	movs	r2, #0
- 800121a:	2104      	movs	r1, #4
+ 800121a:	2140      	movs	r1, #64	@ 0x40
  800121c:	481e      	ldr	r0, [pc, #120]	@ (8001298 <voltage_gain+0xe0>)
  800121e:	f001 fd73 	bl	8002d08 <HAL_GPIO_WritePin>
         printf("MULTIPLIER = 2\r\n");
@@ -1627,14 +1627,14 @@ void voltage_gain(uint32_t voltage){
  8001228:	e00c      	b.n	8001244 <voltage_gain+0x8c>
     } else {
         // VOLTAGE_MULTIPLIER = 1; GPIOB1 LOW, GPIOB2 LOW
-        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_RESET);
  800122a:	2200      	movs	r2, #0
- 800122c:	2102      	movs	r1, #2
+ 800122c:	2120      	movs	r1, #32
  800122e:	481a      	ldr	r0, [pc, #104]	@ (8001298 <voltage_gain+0xe0>)
  8001230:	f001 fd6a 	bl	8002d08 <HAL_GPIO_WritePin>
-        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_2, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_RESET);
  8001234:	2200      	movs	r2, #0
- 8001236:	2104      	movs	r1, #4
+ 8001236:	2140      	movs	r1, #64	@ 0x40
  8001238:	4817      	ldr	r0, [pc, #92]	@ (8001298 <voltage_gain+0xe0>)
  800123a:	f001 fd65 	bl	8002d08 <HAL_GPIO_WritePin>
         printf("MULTIPLIER = 1\r\n");
@@ -2753,9 +2753,9 @@ static void MX_GPIO_Init(void)
  800191c:	f001 f9f4 	bl	8002d08 <HAL_GPIO_WritePin>
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1|GPIO_PIN_2, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5|GPIO_PIN_6, GPIO_PIN_RESET);
  8001920:	2200      	movs	r2, #0
- 8001922:	2106      	movs	r1, #6
+ 8001922:	2160      	movs	r1, #96	@ 0x60
  8001924:	4820      	ldr	r0, [pc, #128]	@ (80019a8 <MX_GPIO_Init+0x118>)
  8001926:	f001 f9ef 	bl	8002d08 <HAL_GPIO_WritePin>
 
@@ -2814,9 +2814,9 @@ static void MX_GPIO_Init(void)
  8001976:	480b      	ldr	r0, [pc, #44]	@ (80019a4 <MX_GPIO_Init+0x114>)
  8001978:	f001 f832 	bl	80029e0 <HAL_GPIO_Init>
 
-  /*Configure GPIO pins : PB1 PB2 */
-  GPIO_InitStruct.Pin = GPIO_PIN_1|GPIO_PIN_2;
- 800197c:	2306      	movs	r3, #6
+  /*Configure GPIO pins : PB5 PB6 */
+  GPIO_InitStruct.Pin = GPIO_PIN_5|GPIO_PIN_6;
+ 800197c:	2360      	movs	r3, #96	@ 0x60
  800197e:	617b      	str	r3, [r7, #20]
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
  8001980:	2301      	movs	r3, #1
