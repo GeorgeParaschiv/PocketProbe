@@ -23,7 +23,7 @@ class scopeGUI(QMainWindow):
         self.BASE_OFFSET = 0.575
 
         self.setWindowTitle("PocketProbe")
-        self.setGeometry(100, 100, 1600, 1000)  # Enlarged window
+        self.setGeometry(100, 100, 2000, 1400)  # Enlarged window
 
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)

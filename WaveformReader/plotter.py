@@ -1,5 +1,6 @@
 import pyqtgraph as pg
 import numpy as np
+import math
 
 class WaveformPlot(pg.PlotWidget):
     def __init__(self, control=None):
@@ -67,19 +68,30 @@ class WaveformPlot(pg.PlotWidget):
             knob.setValue(max(knob.value() - 1, knob.minimum()))
         event.accept()
 
-    def setTicks(self, x_step, y_step):
+    def setTicks(self, x_step, y_step, vOffset=0):
         x_ticks = [(i * x_step, f"{i * x_step:.3g}") for i in range(11)]
-        y_ticks = [(i * y_step - 4 * y_step, f"{i * y_step - 4 * y_step:.3g}") for i in range(9)]
+
+        # Viewport is shifted by vOffset, so calculate visible y range
+        yMin = -y_step * (self.NUM_VERT_DIVS / 2) - vOffset
+        yMax = y_step * (self.NUM_VERT_DIVS / 2) - vOffset
+
+        # Generate ticks at fixed multiples of y_step covering the visible range
+        # Tick positions stay in data space — they don't shift
+        first_idx = math.floor(yMin / y_step) if y_step != 0 else 0
+        last_idx = math.ceil(yMax / y_step) if y_step != 0 else 0
+
+        y_ticks = []
+        for i in range(first_idx, last_idx + 1):
+            val = round(i * y_step, 10)
+            y_ticks.append((val, f"{val:.3g}"))
 
         self.plotItem.getAxis('bottom').setTicks([x_ticks])
         self.plotItem.getAxis('left').setTicks([y_ticks])
 
     def setPlotRange(self, vDiv, hDiv, vOffset=0):
-        # Shift y-axis by vOffset
-        # Negative offset → shift zero down (subtract from range)
-        # Positive offset → shift zero up (add to range)
-        yMin = round(-vDiv * (self.NUM_VERT_DIVS/2) - vOffset, 3)
-        yMax = round(vDiv * (self.NUM_VERT_DIVS/2) - vOffset, 3)
+        # Shift the viewport by vOffset — grid physically moves
+        yMin = round(-vDiv * (self.NUM_VERT_DIVS/2) - vOffset, 6)
+        yMax = round(vDiv * (self.NUM_VERT_DIVS/2) - vOffset, 6)
         self.plotItem.setRange(
             xRange=(0, self.NUM_HORZ_DIVS * hDiv),
             yRange=(yMin, yMax)
@@ -93,7 +105,7 @@ class WaveformPlot(pg.PlotWidget):
         
         # Set axis ticks and range (y-axis shifted by offset)
         self.setPlotRange(vDiv, hDiv, vOffset)
-        self.setTicks(hDiv, vDiv)
+        self.setTicks(hDiv, vDiv, vOffset)
         
         self.plot.setData(waveform[0], waveform[1])
 
