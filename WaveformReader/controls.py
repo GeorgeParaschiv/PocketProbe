@@ -53,8 +53,8 @@ class ControlPanel:
         self.layout.addLayout(div_row)
 
         # --- Vertical Offset slider ---
-        # DAC range: -78 to +78 steps (corresponds to -1V to +1V)
-        # DAC step size: 3.3V/256 ≈ 12.89mV per step
+        # DAC range: -85 to +85 steps
+        # DAC step size: ~12mV per step
         voffset_row = QHBoxLayout()
         self.vert_off_label = QLabel("Vertical Offset")
         voffset_row.addWidget(self.vert_off_label)
@@ -66,8 +66,8 @@ class ControlPanel:
         voffset_row.addWidget(self.vert_off_left_btn)
         
         self.vert_off_slider = QSlider(Qt.Horizontal)
-        self.vert_off_slider.setMinimum(-78)  # -1V in DAC steps
-        self.vert_off_slider.setMaximum(78)   # +1V in DAC steps
+        self.vert_off_slider.setMinimum(-85)  # Minimum DAC steps
+        self.vert_off_slider.setMaximum(85)   # Maximum DAC steps
         self.vert_off_slider.setValue(0)
         self.vert_off_slider.setTickInterval(1)
         voffset_row.addWidget(self.vert_off_slider)
@@ -181,12 +181,12 @@ class ControlPanel:
         self._on_vert_off_released()
 
     def _on_vert_off_released(self):
-        val = self.vert_off_slider.value()  # DAC steps (-78 to +78)
+        val = self.vert_off_slider.value()  # DAC steps (-85 to +85)
         if val != self._prev_vert_off:
             self._prev_vert_off = val
-            # Encode signed offset as unsigned: add 78 so range becomes 0-156
-            # ESP32 will subtract 78 to get the actual signed value
-            encoded_val = val + 78
+            # Encode signed offset as unsigned: add 85 so range becomes 0-170
+            # ESP32 will subtract 85 to get the actual signed value
+            encoded_val = val + 85
             print(f"Offset: {val} DAC steps ({val * 12.89:.1f}mV), encoded: {encoded_val}")
             self.signals.value_changed.emit(self.OP_MAP['O'], encoded_val)
 
@@ -217,8 +217,8 @@ class ControlPanel:
             us //= 5
         self.signals.value_changed.emit(self.OP_MAP['T'], us)
         
-        # Send vertical offset (encoded as unsigned: value + 78)
-        encoded_offset = self.vert_off_slider.value() + 78
+        # Send vertical offset (encoded as unsigned: value + 85)
+        encoded_offset = self.vert_off_slider.value() + 85
         self.signals.value_changed.emit(self.OP_MAP['O'], encoded_offset)
 
     def getDivisionLabels(self):
@@ -255,8 +255,27 @@ class ControlPanel:
             return 1.0  # fallback
 
     def getVertOffset(self):
-        dac_steps = self.vert_off_slider.value()
-        return dac_steps
+        """Returns formatted string for display (e.g., '+120mV' or '1.02V')"""
+        dac_steps = self.getVertOffsetDacSteps()
+        # Convert DAC steps to voltage (12mV per step)
+        voltage_mv = dac_steps * 12.0
+        if abs(voltage_mv) >= 1000:
+            # Show in volts if >= 1V
+            return f"{voltage_mv / 1000.0:.3f}V"
+        else:
+            # Show in millivolts
+            sign = "+" if voltage_mv >= 0 else ""
+            return f"{sign}{voltage_mv:.0f}mV"
+    
+    def getVertOffsetDacSteps(self):
+        """Returns the raw DAC steps value (-85 to +85)"""
+        return self.vert_off_slider.value()
+    
+    def getVertOffsetValue(self):
+        """Returns numeric voltage offset in volts for calculations"""
+        dac_steps = self.getVertOffsetDacSteps()
+        # Convert DAC steps to voltage in volts (12mV per step)
+        return (dac_steps * 12.0) / 1000.0
     
     def getHorzOffset(self):
         return self.horz_off_slider.value()

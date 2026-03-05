@@ -145,9 +145,9 @@ class scopeGUI(QMainWindow):
             return f"[{op_name}] Setting timebase to {formatted_value}"
             
         elif op_code == 3:  # Vertical offset
-            # Value is encoded (0-156), decode to DAC steps (-78 to +78)
-            dac_steps = value - 78
-            offset_volts = dac_steps * 0.01289  # 3.3V / 256 ≈ 12.89mV per step
+            # Value is encoded (0-170), decode to DAC steps (-85 to +85)
+            dac_steps = value - 85
+            offset_volts = dac_steps * 0.012  # 12mV per step
             if offset_volts >= 0:
                 formatted_value = f"+{dac_steps} DAC steps (+{offset_volts*1000:.1f}mV)"
             else:
@@ -204,16 +204,18 @@ class scopeGUI(QMainWindow):
                 y_display = self._prev_y_display
 
             voltage_gain = self.control.getVoltageMultiplier()
-            voltage_offset = self.control.getVertOffset()
+            voltage_offset_steps = self.control.getVertOffsetDacSteps()
             
             # Step 1: Diff Amp Inverse Function
-            y_display = (y_display + 0.0446867) * 1.0103551297245
+            y_display = y_display * 1.01204 + 0.0416623
             
-            # Step 2: Subtract Offset Function 
-            y_display = y_display - 0.0084   
-            #y_display = y_display - (-0.0000019283 * voltage_offset**3 + 0.00000195206 * voltage_offset**2 + 0.0127312 * voltage_offset - 0.00123773)
-            #y_display = y_display - (voltage_offset * 0.0122807 - 0.00108)
-            #y_display = y_display + 0.001
+            # Step 2: Subtract Offset Function
+            if voltage_offset_steps > 0:
+                offset = voltage_offset_steps * 0.0119877 + 0.00247083
+            else:
+                offset = -voltage_offset_steps * -0.0121568 + 0.0014475  
+                
+            y_display = y_display - offset
             
             # Step 3: Voltage Division and Base Gain
             y_display = y_display * (1 / voltage_gain)

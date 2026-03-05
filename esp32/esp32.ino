@@ -34,7 +34,8 @@
 #define DAC_MINUS_PIN 18
 #define DAC_STEP_VOLTAGE 0.01289f  // 3.3V / 256 = ~12.89mV per step
 #define MAX_OFFSET_VOLTAGE 1.0f    // Maximum offset is 1V
-#define MAX_DAC_VALUE 78           // 1V / 0.01289V ≈ 78 steps
+#define MAX_DAC_VALUE 170
+#define BASE_DAC_VALUE 85
 
 uint8_t * rx_buf;
 uint8_t * tx_buf; 
@@ -45,27 +46,24 @@ WiFiClient client;
 
 void set_voltage_offset(uint32_t encoded_value) {
 
-  int32_t offset = (int32_t)encoded_value - 78;
-  
-  uint8_t BASE_VALUE_PLUS = 57;
-  uint8_t BASE_VALUE_MINUS = 60;
+  int32_t offset = (int32_t)encoded_value - BASE_DAC_VALUE;
 
   if (offset > 0) {
     // Positive offset: add to DAC+, DAC- = 0
     uint8_t dac_plus = (offset > MAX_DAC_VALUE) ? MAX_DAC_VALUE : (uint8_t)offset;
-    dacWrite(DAC_PLUS_PIN, BASE_VALUE_PLUS + dac_plus);
-    dacWrite(DAC_MINUS_PIN, BASE_VALUE_MINUS);
+    dacWrite(DAC_PLUS_PIN, BASE_DAC_VALUE + dac_plus);
+    dacWrite(DAC_MINUS_PIN, BASE_DAC_VALUE);
     Serial.printf("Offset: +%d DAC steps (DAC+ = %d, DAC- = 0)\n", offset, dac_plus);
   } else if (offset < 0) {
     // Negative offset: add to DAC-, DAC+ = 0
     uint8_t dac_minus = (-offset > MAX_DAC_VALUE) ? MAX_DAC_VALUE : (uint8_t)(-offset);
-    dacWrite(DAC_PLUS_PIN, BASE_VALUE_PLUS);
-    dacWrite(DAC_MINUS_PIN, BASE_VALUE_MINUS + dac_minus);
+    dacWrite(DAC_PLUS_PIN, BASE_DAC_VALUE);
+    dacWrite(DAC_MINUS_PIN, BASE_DAC_VALUE + dac_minus);
     Serial.printf("Offset: %d DAC steps (DAC+ = 0, DAC- = %d)\n", offset, dac_minus);
   } else {
     // Zero offset: both DACs = 0
-    dacWrite(DAC_PLUS_PIN, BASE_VALUE_PLUS);
-    dacWrite(DAC_MINUS_PIN, BASE_VALUE_MINUS);
+    dacWrite(DAC_PLUS_PIN, BASE_DAC_VALUE);
+    dacWrite(DAC_MINUS_PIN, BASE_DAC_VALUE);
     Serial.println("Offset: 0 (both DACs = 0)");
   }
 }
@@ -177,8 +175,8 @@ void setup() {
   digitalWrite(ADC_CLK_EN, HIGH);
 
   // Initialize DAC outputs for voltage offset (start at 0)
-  dacWrite(DAC_PLUS_PIN, 0);
-  dacWrite(DAC_MINUS_PIN, 0);
+  dacWrite(DAC_PLUS_PIN, BASE_DAC_VALUE);
+  dacWrite(DAC_MINUS_PIN, BASE_DAC_VALUE);
 
   setup_wifi();
   setup_spi_slave();

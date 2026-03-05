@@ -89,7 +89,7 @@ class WaveformPlot(pg.PlotWidget):
         # Get division sizes from ControlPanel properties
         hDiv = self.control.getHorizontalDiv()
         vDiv = self.control.getVerticalDiv()
-        vOffset = self.control.getVertOffset()
+        vOffset = self.control.getVertOffsetValue()  # Get numeric value in volts
         
         # Set axis ticks and range (y-axis shifted by offset)
         self.setPlotRange(vDiv, hDiv, vOffset)
