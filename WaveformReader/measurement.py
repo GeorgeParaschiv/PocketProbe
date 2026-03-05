@@ -134,17 +134,35 @@ class MeasurementPanel(QWidget):
         item = QListWidgetItem()
         widget = QWidget()
         layout = QHBoxLayout(widget)
-        label = QLabel(key)
-        label.setMinimumWidth(120)  # Make label wider for value display
-        label.setMinimumHeight(80)
-        label.setStyleSheet("font-size: 13pt; color: #e0e0e0;")
+
+        # Two-row label: name (left) on top, value (right) on bottom
+        label_widget = QWidget()
+        label_layout = QVBoxLayout(label_widget)
+        label_layout.setContentsMargins(0, 0, 0, 0)
+        label_layout.setSpacing(2)
+
+        name_label = QLabel(key)
+        name_label.setAlignment(Qt.AlignLeft)
+        name_label.setStyleSheet("font-size: 10pt; color: #aaa;")
+
+        value_label = QLabel("--")
+        value_label.setAlignment(Qt.AlignRight)
+        value_label.setStyleSheet("font-size: 10pt; color: #e0e0e0; font-weight: bold;")
+
+        label_layout.addWidget(name_label)
+        label_layout.addWidget(value_label)
+
+        label_widget.setMinimumWidth(120)
+        label_widget.setMinimumHeight(50)
+
         remove_btn = QPushButton("x")
         remove_btn.setFixedWidth(24)
-        layout.addWidget(label)
+        layout.addWidget(label_widget)
         layout.addWidget(remove_btn)
         layout.setContentsMargins(4, 4, 4, 4)
         widget.setLayout(layout)
-        item.setSizeHint(widget.sizeHint())
+        from PyQt5.QtCore import QSize
+        item.setSizeHint(QSize(widget.sizeHint().width(), 120))
         self.measurement_list.addItem(item)
         self.measurement_list.setItemWidget(item, widget)
 
@@ -155,16 +173,62 @@ class MeasurementPanel(QWidget):
 
         remove_btn.clicked.connect(remove)
 
+    def _format_cursor_value(self, key, value):
+        """Format cursor value with appropriate units based on axis"""
+        if key in ('X1', 'X2', 'Δx'):
+            # Time values — pick appropriate unit
+            abs_v = abs(value)
+            if abs_v == 0:
+                return f"{key}: 0"
+            elif abs_v >= 1e-3:
+                return f"{key}: {value*1e3:.3f} ms"
+            elif abs_v >= 1e-6:
+                return f"{key}: {value*1e6:.3f} μs"
+            else:
+                return f"{key}: {value:.3e} s"
+        else:
+            # Voltage values
+            abs_v = abs(value)
+            if abs_v == 0:
+                return f"{key}: 0"
+            elif abs_v >= 1:
+                return f"{key}: {value:.3f} V"
+            else:
+                return f"{key}: {value*1e3:.3f} mV"
+
     def update_display(self):
         cursor_values = self.cursor_mgr.get_cursor_values()
-        lines = [f"{k}: {v:.3f}" for k, v in cursor_values.items()]
+        lines = [self._format_cursor_value(k, v) for k, v in cursor_values.items()]
         self.cursor_values_label.setText("Cursor Values:\n" + "\n".join(lines))
 
         stats = self.mm.get_measurements()
         for i in range(self.measurement_list.count()):
             item = self.measurement_list.item(i)
             widget = self.measurement_list.itemWidget(item)
-            label = widget.layout().itemAt(0).widget()
-            key = label.text().split(":")[0]
+            label_widget = widget.layout().itemAt(0).widget()
+            name_label = label_widget.layout().itemAt(0).widget()
+            value_label = label_widget.layout().itemAt(1).widget()
+            key = name_label.text()
             if key in stats:
-                label.setText(f"{key}: {stats[key]:.4f}")
+                value_label.setText(self._format_measurement(key, stats[key]))
+
+    def _format_measurement(self, key, value):
+        """Format measurement value with appropriate units"""
+        if key == "Frequency":
+            if value == 0:
+                return "N/A"
+            elif value >= 1e6:
+                return f"{value/1e6:.3f} MHz"
+            elif value >= 1e3:
+                return f"{value/1e3:.3f} kHz"
+            else:
+                return f"{value:.3f} Hz"
+        else:
+            # Voltage measurements (Vpp, Max, Min, Mean)
+            abs_v = abs(value)
+            if abs_v == 0:
+                return "0 V"
+            elif abs_v >= 1:
+                return f"{value:.3f} V"
+            else:
+                return f"{value*1e3:.3f} mV"

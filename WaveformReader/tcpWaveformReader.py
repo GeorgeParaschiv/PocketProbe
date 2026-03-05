@@ -34,6 +34,7 @@ class TCPWaveformReader:
         self._connected = False
         self._was_ever_connected = False
         self.retry_interval = retry_interval
+        self.battery_info = None  # {'charging': bool, 'percentage': int} or None
         self._thread = threading.Thread(target=self._reader_thread, daemon=True)
         self._thread.start()
 
@@ -53,43 +54,69 @@ class TCPWaveformReader:
                     pass
                 time.sleep(self.retry_interval)
 
+    def _disconnect(self, msg="TCP connection lost. Reconnecting..."):
+        """Helper to cleanly handle disconnection"""
+        if self._connected:
+            print(msg)
+        self._connected = False
+        if self.sock:
+            try:
+                self.sock.close()
+            except Exception:
+                pass
+            self.sock = None
+
     def _reader_thread(self):
         while not self._stop_event.is_set():
             if not self._connected or self.sock is None:
                 self._connect()
                 continue
             try:
-                raw_bytes = self._recv_exact(self.frame_size * 2)
-                if raw_bytes is not None and len(raw_bytes) == self.frame_size * 2:
-                    samples = [
-                        convert(val)
-                        for val in struct.unpack('>' + 'H' * self.frame_size, raw_bytes)
-                    ]
-                    try:
-                        self.queue.put(samples, timeout=0.1)
-                    except queue.Full:
-                        pass
-                else:
-                    # Connection lost, reset and retry
-                    if self._connected:
-                        print("TCP connection lost. Reconnecting...")
-                    self._connected = False
-                    if self.sock:
+                # Read 2-byte length header (big-endian)
+                header = self._recv_exact(2)
+                if header is None or len(header) != 2:
+                    self._disconnect()
+                    continue
+
+                msg_len = struct.unpack('>H', header)[0]
+
+                if msg_len == self.frame_size * 2:
+                    # Frame data
+                    raw_bytes = self._recv_exact(msg_len)
+                    if raw_bytes is not None and len(raw_bytes) == msg_len:
+                        samples = [
+                            convert(val)
+                            for val in struct.unpack('>' + 'H' * self.frame_size, raw_bytes)
+                        ]
                         try:
-                            self.sock.close()
-                        except Exception:
+                            self.queue.put(samples, timeout=0.1)
+                        except queue.Full:
                             pass
-                        self.sock = None
+                    else:
+                        self._disconnect()
+
+                elif msg_len == 2:
+                    # Battery status packet: [status, percentage]
+                    batt_bytes = self._recv_exact(2)
+                    if batt_bytes is not None and len(batt_bytes) == 2:
+                        status = batt_bytes[0]    # 0 = on battery, 1 = charging
+                        percentage = batt_bytes[1] # 0-100
+                        self.battery_info = {
+                            'charging': status == 1,
+                            'percentage': percentage
+                        }
+                    else:
+                        self._disconnect()
+
+                else:
+                    # Unknown message length — try to skip
+                    print(f"Unknown message length: {msg_len}, skipping")
+                    skip = self._recv_exact(msg_len)
+                    if skip is None:
+                        self._disconnect()
+
             except Exception:
-                if self._connected:
-                    print("TCP connection lost. Reconnecting...")
-                self._connected = False
-                if self.sock:
-                    try:
-                        self.sock.close()
-                    except Exception:
-                        pass
-                    self.sock = None
+                self._disconnect()
                 time.sleep(self.retry_interval)
 
     def _recv_exact(self, n):

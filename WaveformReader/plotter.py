@@ -7,7 +7,7 @@ class WaveformPlot(pg.PlotWidget):
         super().__init__(title="Waveform Display")
         
          # --- Division counts ---
-        self.NUM_HORZ_DIVS = 10  # Horizontal divisions
+        self.NUM_HORZ_DIVS = 8   # Horizontal divisions
         self.NUM_VERT_DIVS = 8   # Vertical divisions
         
         self.setBackground('#1e1e1e')
@@ -30,6 +30,44 @@ class WaveformPlot(pg.PlotWidget):
 
         # Plot line
         self.plot = self.plotItem.plot(pen=pg.mkPen('yellow', width=1.5))
+
+        # Trigger level indicator — horizontal line across the plot
+        self.trigger_line = pg.InfiniteLine(
+            pos=0, angle=0,
+            pen=pg.mkPen(color='#FF4444', width=1, style=pg.QtCore.Qt.DashLine),
+            movable=False
+        )
+        self.trigger_line.setVisible(False)  # Hidden when trigger is off
+        self.plotItem.addItem(self.trigger_line)
+
+        # Trigger level arrow/tick on the left edge
+        self.trigger_arrow = pg.ArrowItem(
+            angle=0,  # Points right
+            tipAngle=30, headLen=10, tailLen=0, tailWidth=0,
+            pen=pg.mkPen('#FF4444', width=1),
+            brush=pg.mkBrush('#FF4444')
+        )
+        self.trigger_arrow.setVisible(False)
+        self.plotItem.addItem(self.trigger_arrow)
+
+        # Horizontal offset marker — vertical line showing trigger position
+        self.horz_offset_line = pg.InfiniteLine(
+            pos=0, angle=90,
+            pen=pg.mkPen(color='#44AAFF', width=1, style=pg.QtCore.Qt.DashLine),
+            movable=False
+        )
+        self.horz_offset_line.setVisible(False)
+        self.plotItem.addItem(self.horz_offset_line)
+
+        # Horizontal offset arrow/tick on the top edge
+        self.horz_offset_arrow = pg.ArrowItem(
+            angle=-90,  # Points down
+            tipAngle=30, headLen=10, tailLen=0, tailWidth=0,
+            pen=pg.mkPen('#44AAFF', width=1),
+            brush=pg.mkBrush('#44AAFF')
+        )
+        self.horz_offset_arrow.setVisible(False)
+        self.plotItem.addItem(self.horz_offset_arrow)
 
         # Reference to control panel for knob adjustment
         self.control = control
@@ -69,7 +107,7 @@ class WaveformPlot(pg.PlotWidget):
         event.accept()
 
     def setTicks(self, x_step, y_step, vOffset=0):
-        x_ticks = [(i * x_step, f"{i * x_step:.3g}") for i in range(11)]
+        x_ticks = [(i * x_step, f"{i * x_step:.3g}") for i in range(self.NUM_HORZ_DIVS + 1)]
 
         # Viewport is shifted by vOffset, so calculate visible y range
         yMin = -y_step * (self.NUM_VERT_DIVS / 2) - vOffset
@@ -106,6 +144,35 @@ class WaveformPlot(pg.PlotWidget):
         # Set axis ticks and range (y-axis shifted by offset)
         self.setPlotRange(vDiv, hDiv, vOffset)
         self.setTicks(hDiv, vDiv, vOffset)
+        
+        # Update trigger level indicator
+        trigger_mode = self.control.getTriggerMode()
+        if trigger_mode != 'off':
+            trigger_level = self.control.getTriggerLevelVolts()
+            self.trigger_line.setValue(trigger_level)
+            self.trigger_line.setVisible(True)
+            # Position arrow at left edge of plot at trigger level
+            self.trigger_arrow.setPos(0, trigger_level)
+            self.trigger_arrow.setVisible(True)
+        else:
+            self.trigger_line.setVisible(False)
+            self.trigger_arrow.setVisible(False)
+        
+        # Update horizontal offset marker (shows where trigger point is on screen)
+        h_offset = self.control.getHorzOffset()
+        if h_offset != 0 and trigger_mode != 'off':
+            # Use actual waveform x-range for accurate marker placement
+            x_data_max = waveform[0][-1] if len(waveform[0]) > 0 else self.NUM_HORZ_DIVS * hDiv
+            trigger_x = x_data_max * (500 + h_offset) / 1000.0
+            self.horz_offset_line.setValue(trigger_x)
+            self.horz_offset_line.setVisible(True)
+            # Position arrow at top of visible y range
+            yMax = vDiv * (self.NUM_VERT_DIVS / 2) - vOffset
+            self.horz_offset_arrow.setPos(trigger_x, yMax)
+            self.horz_offset_arrow.setVisible(True)
+        else:
+            self.horz_offset_line.setVisible(False)
+            self.horz_offset_arrow.setVisible(False)
         
         self.plot.setData(waveform[0], waveform[1])
 

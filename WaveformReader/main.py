@@ -62,7 +62,7 @@ def apply_stylesheet(app):
 def main():
     app = QApplication(sys.argv)
     apply_stylesheet(app)
-    window = scopeGUI(1000)  # Pass frame_size as before
+    window = scopeGUI(2000)  # 2000 points per frame (trigger extracts 1000 for display)
     window.show()
     sys.exit(app.exec_())
 

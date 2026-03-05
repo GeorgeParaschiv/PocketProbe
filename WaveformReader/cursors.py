@@ -55,40 +55,52 @@ class CursorManager(QObject):
         if event.type() == event.GraphicsSceneMousePress:
             mouse_point = self.plot_widget.plotItem.vb.mapSceneToView(event.scenePos())
             mx, my = mouse_point.x(), mouse_point.y()
-            c1x = self.cursors['1']['x'].value()
-            c1y = self.cursors['1']['y'].value()
-            c2x = self.cursors['2']['x'].value()
-            c2y = self.cursors['2']['y'].value()
-            threshold = 0.01 * max(
-                abs(self.plot_widget.plotItem.viewRange()[0][1] - self.plot_widget.plotItem.viewRange()[0][0]),
-                abs(self.plot_widget.plotItem.viewRange()[1][1] - self.plot_widget.plotItem.viewRange()[1][0])
-            )
-            # Cursor 1 checks (mutually exclusive)
-            if abs(mx - c1x) < threshold and abs(my - c1y) < threshold:
-                self._dragging_cursor = '1'
-                self._dragging_axis = 'xy'
+
+            # Separate thresholds for each axis (3% of visible span)
+            x_span = abs(self.plot_widget.plotItem.viewRange()[0][1] - self.plot_widget.plotItem.viewRange()[0][0])
+            y_span = abs(self.plot_widget.plotItem.viewRange()[1][1] - self.plot_widget.plotItem.viewRange()[1][0])
+            x_thresh = 0.03 * x_span
+            y_thresh = 0.03 * y_span
+
+            # Find the closest VISIBLE cursor using normalized distance
+            best_cursor = None
+            best_dist = float('inf')
+            best_axis = None
+
+            for name in ['1', '2']:
+                if not self.cursors[name]['x'].isVisible():
+                    continue
+                cx = self.cursors[name]['x'].value()
+                cy = self.cursors[name]['y'].value()
+
+                dx_norm = abs(mx - cx) / x_thresh if x_thresh > 0 else float('inf')
+                dy_norm = abs(my - cy) / y_thresh if y_thresh > 0 else float('inf')
+
+                near_x = dx_norm < 1.0
+                near_y = dy_norm < 1.0
+
+                if near_x and near_y:
+                    dist = dx_norm + dy_norm
+                    if dist < best_dist:
+                        best_dist = dist
+                        best_cursor = name
+                        best_axis = 'xy'
+                elif near_x:
+                    if dx_norm < best_dist:
+                        best_dist = dx_norm
+                        best_cursor = name
+                        best_axis = 'x'
+                elif near_y:
+                    if dy_norm < best_dist:
+                        best_dist = dy_norm
+                        best_cursor = name
+                        best_axis = 'y'
+
+            if best_cursor is not None:
+                self._dragging_cursor = best_cursor
+                self._dragging_axis = best_axis
                 return True
-            elif abs(mx - c1x) < threshold and abs(my - c1y) >= threshold:
-                self._dragging_cursor = '1'
-                self._dragging_axis = 'x'
-                return True
-            elif abs(my - c1y) < threshold and abs(mx - c1x) >= threshold:
-                self._dragging_cursor = '1'
-                self._dragging_axis = 'y'
-                return True
-            # Cursor 2 checks (mutually exclusive)
-            if abs(mx - c2x) < threshold and abs(my - c2y) < threshold:
-                self._dragging_cursor = '2'
-                self._dragging_axis = 'xy'
-                return True
-            elif abs(mx - c2x) < threshold and abs(my - c2y) >= threshold:
-                self._dragging_cursor = '2'
-                self._dragging_axis = 'x'
-                return True
-            elif abs(my - c2y) < threshold and abs(mx - c2x) >= threshold:
-                self._dragging_cursor = '2'
-                self._dragging_axis = 'y'
-                return True
+
         elif event.type() == event.GraphicsSceneMouseMove:
             if self._dragging_cursor is not None:
                 mouse_point = self.plot_widget.plotItem.vb.mapSceneToView(event.scenePos())
@@ -102,7 +114,9 @@ class CursorManager(QObject):
                 elif self._dragging_axis == 'y':
                     cursor['y'].setValue(my)
                 return True
+
         elif event.type() == event.GraphicsSceneMouseRelease:
             self._dragging_cursor = None
             self._dragging_axis = None
+
         return False

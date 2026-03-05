@@ -33,7 +33,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define NUM_SAMPLES 1000
+#define NUM_SAMPLES 2000
 #define GPIO_MASK 0x0FFF //12 bits
 
 #define CS_GPIO_Port GPIOA
