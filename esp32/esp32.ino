@@ -6,8 +6,8 @@
 #include "nvs_flash.h"
 #include <WiFi.h>
 
-#define WIFI_SSID "esp_ap"
-#define WIFI_PASS "esp32pass"
+#define WIFI_SSID "PocketProbe2"
+#define WIFI_PASS "starlight123"
 #define MAX_STA_CONN 1
 #define TCP_PORT 8080
 

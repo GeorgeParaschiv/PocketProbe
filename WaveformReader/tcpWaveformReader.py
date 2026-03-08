@@ -3,27 +3,33 @@ import struct
 import threading
 import queue
 import time
+import subprocess
+import os
 
 TCP_IP = '192.168.4.1'
 TCP_PORT = 8080
 GPIO_MASK = 0x0FFF  # 12-bit mask
 VREF = 1.5
 
+WIFI_SSID = "PocketProbe2"
+WIFI_PASSWORD = "starlight123"
+
 def convert(data):
     """Convert raw ADC data to a normalized value (before gain/offset processing)"""
     raw = data & GPIO_MASK
-    
+
     # Reverse bit order (12 bits)
     reversed_val = int(f'{raw:012b}'[::-1], 2)
-    
+
     # Convert from 12-bit two's complement to signed
     if reversed_val >= 2048:
         signed_val = reversed_val - 4096
     else:
         signed_val = reversed_val
-    
+
     # Return normalized ADC voltage (just VREF scaling, no gain/offset)
     return (signed_val / 2048.0) * VREF
+
 
 class TCPWaveformReader:
     def __init__(self, frame_size, max_queue=10, retry_interval=2):
@@ -34,9 +40,94 @@ class TCPWaveformReader:
         self._connected = False
         self._was_ever_connected = False
         self.retry_interval = retry_interval
-        self.battery_info = None  # {'charging': bool, 'percentage': int} or None
+        self.battery_info = None
+        self._wifi_connecting = False
+        self._wifi_result = None  # (success: bool, message: str) or None
         self._thread = threading.Thread(target=self._reader_thread, daemon=True)
         self._thread.start()
+
+    def connect_wifi(self):
+        """Start WiFi connection to ESP32 AP in a background thread."""
+        if self._wifi_connecting:
+            return
+        self._wifi_connecting = True
+        self._wifi_result = None
+        t = threading.Thread(target=self._wifi_connect_thread, daemon=True)
+        t.start()
+
+    def get_wifi_result(self):
+        """Poll for WiFi connection result. Returns (success, message) or None if still in progress."""
+        result = self._wifi_result
+        if result is not None:
+            self._wifi_result = None
+        return result
+
+    @property
+    def wifi_connecting(self):
+        return self._wifi_connecting
+
+    def _wifi_connect_thread(self):
+        try:
+            subprocess.run(
+                ["netsh", "wlan", "disconnect"],
+                capture_output=True, text=True, timeout=10
+            )
+            time.sleep(1)
+
+            self._ensure_wifi_profile()
+
+            result = subprocess.run(
+                ["netsh", "wlan", "connect", f"name={WIFI_SSID}"],
+                capture_output=True, text=True, timeout=15
+            )
+            print(f"netsh connect stdout: {result.stdout.strip()}")
+            print(f"netsh connect stderr: {result.stderr.strip()}")
+
+            if "successfully" in result.stdout.lower():
+                time.sleep(2)
+                self._wifi_result = (True, "Connected to esp_ap")
+            else:
+                self._wifi_result = (False, "WiFi connect failed — is esp_ap powered on?")
+        except subprocess.TimeoutExpired:
+            self._wifi_result = (False, "WiFi connect timed out")
+        except Exception as e:
+            self._wifi_result = (False, str(e))
+        finally:
+            self._wifi_connecting = False
+
+    def _ensure_wifi_profile(self):
+        check = subprocess.run(
+            ["netsh", "wlan", "show", "profile", WIFI_SSID],
+            capture_output=True, text=True, timeout=10
+        )
+        if WIFI_SSID in check.stdout:
+            return
+
+        profile_xml = f"""<?xml version="1.0"?>
+<WLANProfile xmlns="http://www.microsoft.com/networking/WLAN/profile/v1">
+    <name>{WIFI_SSID}</name>
+    <SSIDConfig><SSID><name>{WIFI_SSID}</name></SSID></SSIDConfig>
+    <connectionType>ESS</connectionType>
+    <connectionMode>manual</connectionMode>
+    <MSM><security>
+        <authEncryption><authentication>WPA2PSK</authentication>
+            <encryption>AES</encryption><useOneX>false</useOneX></authEncryption>
+        <sharedKey><keyType>passPhrase</keyType>
+            <protected>false</protected><keyMaterial>{WIFI_PASSWORD}</keyMaterial></sharedKey>
+    </security></MSM>
+</WLANProfile>"""
+        tmp = os.path.join(os.environ.get("TEMP", "."), "esp_ap_profile.xml")
+        with open(tmp, "w") as f:
+            f.write(profile_xml)
+        result = subprocess.run(
+            ["netsh", "wlan", "add", "profile", f"filename={tmp}"],
+            capture_output=True, text=True, timeout=10
+        )
+        print(f"netsh add profile: {result.stdout.strip()}")
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
 
     def _connect(self):
         while not self._stop_event.is_set() and not self._connected:
@@ -48,14 +139,12 @@ class TCPWaveformReader:
                 self._connected = True
                 print("TCP connection established.")
                 self._was_ever_connected = True
-            except Exception as e:
+            except Exception:
                 if not self._was_ever_connected:
-                    # First time trying to connect, don't spam
                     pass
                 time.sleep(self.retry_interval)
 
     def _disconnect(self, msg="TCP connection lost. Reconnecting..."):
-        """Helper to cleanly handle disconnection"""
         if self._connected:
             print(msg)
         self._connected = False
@@ -72,7 +161,6 @@ class TCPWaveformReader:
                 self._connect()
                 continue
             try:
-                # Read 2-byte length header (big-endian)
                 header = self._recv_exact(2)
                 if header is None or len(header) != 2:
                     self._disconnect()
@@ -81,7 +169,6 @@ class TCPWaveformReader:
                 msg_len = struct.unpack('>H', header)[0]
 
                 if msg_len == self.frame_size * 2:
-                    # Frame data
                     raw_bytes = self._recv_exact(msg_len)
                     if raw_bytes is not None and len(raw_bytes) == msg_len:
                         samples = [
@@ -96,11 +183,10 @@ class TCPWaveformReader:
                         self._disconnect()
 
                 elif msg_len == 2:
-                    # Battery status packet: [status, percentage]
                     batt_bytes = self._recv_exact(2)
                     if batt_bytes is not None and len(batt_bytes) == 2:
-                        status = batt_bytes[0]    # 0 = on battery, 1 = charging
-                        percentage = batt_bytes[1] # 0-100
+                        status = batt_bytes[0]
+                        percentage = batt_bytes[1]
                         self.battery_info = {
                             'charging': status == 1,
                             'percentage': percentage
@@ -109,7 +195,6 @@ class TCPWaveformReader:
                         self._disconnect()
 
                 else:
-                    # Unknown message length — try to skip
                     print(f"Unknown message length: {msg_len}, skipping")
                     skip = self._recv_exact(msg_len)
                     if skip is None:

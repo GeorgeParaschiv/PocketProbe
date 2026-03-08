@@ -34,7 +34,7 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define NUM_SAMPLES 2000
-#define GPIO_MASK 0x0FFF //12 bits
+#define GPIO_MASK 0x0FFF
 
 #define CS_GPIO_Port GPIOA
 #define CS_Pin GPIO_PIN_4
@@ -45,7 +45,7 @@
 
 #define PASSWORD_CODE 0xDEADBEEF
 
-#define DEBUG_ENABLED 0  // Set to 0 to disable debug prints
+#define DEBUG_ENABLED 1  // Set to 0 to disable debug prints
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -74,8 +74,6 @@ volatile uint8_t dma_done = 0;
 volatile uint8_t tx_done = 0;
 volatile uint8_t num_frames = 1;
 
-char start_frame = 'S';
-
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -94,13 +92,6 @@ int __io_putchar(int ch)
 {
 	ITM_SendChar(ch);
 	return ch;
-}
-
-static inline uint16_t ADC_ReadWord(void)
-{
-	// GPIOC->IDR bit0→PC0, bit1→PC1, …, bit11→PC11
-	// Mask 0x0FFF keeps bits 0–11
-	return (uint16_t)(GPIOC->IDR & GPIO_MASK);
 }
 
 float adc_to_voltage(uint16_t raw) {
@@ -152,42 +143,28 @@ void voltage_gain(uint32_t voltage){
         // VOLTAGE MULTIPLIER = 10; GPIOB1 HIGH, GPIOB2 HIGH
         HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_SET);
         HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_SET);
-        printf("MULTIPLIER = 10\r\n");
+        DEBUG_PRINT("MULTIPLIER = 10\r\n");
     } else if (voltage <= 500) {
         // VOLTAGE MULTIPLIER = 5; GPIOB1 HIGH, GPIOB2 LOW
         HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_RESET);
         HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_SET);
-        printf("MULTIPLIER = 5\r\n");
+        DEBUG_PRINT("MULTIPLIER = 5\r\n");
     } else if (voltage <= 2000) {
         // VOLTAGE MULTIPLIER = 2; GPIOB1 LOW, GPIOB2 HIGH
         HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_SET);
         HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_RESET);
-        printf("MULTIPLIER = 2\r\n");
+        DEBUG_PRINT("MULTIPLIER = 2\r\n");
     } else {
         // VOLTAGE_MULTIPLIER = 1; GPIOB1 LOW, GPIOB2 LOW
         HAL_GPIO_WritePin(GPIOB, GPIO_PIN_5, GPIO_PIN_RESET);
         HAL_GPIO_WritePin(GPIOB, GPIO_PIN_6, GPIO_PIN_RESET);
-        printf("MULTIPLIER = 1\r\n");
+        DEBUG_PRINT("MULTIPLIER = 1\r\n");
     }
-
-    // Average first 100 points
-    		float sum = 0.0f;
-    		for (int i = 0; i < 100; ++i) {
-    		    sum += adc_to_voltage(gpio_buffer[i]);
-    		}
-    		float avg = sum / 100.0f;
-    		DEBUG_PRINT("Average: %.4f V\r\n", avg);
-
-    return;
 }
 
 void window_scale(uint32_t frames){
-	printf("FRAMES = %lu\r\n", frames);
+	DEBUG_PRINT("FRAMES = %lu\r\n", frames);
 	num_frames = frames;
-}
-
-void voltage_offset(uint32_t offset){
-
 }
 
 uint8_t verifyPasscode(uint16_t *rx_buf, size_t len)
@@ -219,7 +196,7 @@ void handle_spi_received_data(uint16_t *rx_buf, size_t len)
 	uint32_t value;
 
 	parseCommand(rx_buf, &identifier, &value);
-  printf("Identifier: %u, Value: %lu\r\n", identifier, value);
+	DEBUG_PRINT("Identifier: %u, Value: %lu\r\n", identifier, value);
 
 	switch(identifier){
 		case 1:
@@ -228,10 +205,6 @@ void handle_spi_received_data(uint16_t *rx_buf, size_t len)
 		case 2:
 			window_scale(value);
 			return;
-		case 3:
-			//voltage_offset(value);
-			return;
-
 		default:
 			return;
 	}
@@ -328,26 +301,13 @@ int main(void)
   MX_SPI1_Init();
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
-//	si5351_Init();
-//
-//	// Set clock 0 to 16MHz
-//	// 25mhz crystal osc * 32 == 800MHz
-//	// 800MHz / 50 = 16Mhz
-//	//
-//	si5351_setupPLLInt(SI5351_PLL_A, 32);
-//	si5351_setupMultisynthInt(0, SI5351_PLL_A, 20);
-//	si5351_setupRdiv(0, SI5351_R_DIV_1);
-//
-//	si5351_enableOutputs(0xFF);
-
 	gpio_buffer = (uint16_t *)malloc(50000 * sizeof(uint16_t));
-
 	register_dma_callbacks();
 
 	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_RESET);
 	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_2, GPIO_PIN_SET);
 
-	printf("Setup Complete\r\n");
+	DEBUG_PRINT("Setup Complete\r\n");
 
   /* USER CODE END 2 */
 
@@ -356,15 +316,7 @@ int main(void)
 	while (1)
 	{
 		sample_gpio_dma();
-
 		while(!dma_done);
-
-		float sum = 0.0f;
-		for (int i = 0; i < 100; ++i) {
-			sum += adc_to_voltage(gpio_buffer[i]);
-		}
-		float avg = sum / 100.0f;
-		printf("Average: %.7f V\r\n", avg);
 
 		spi_gpio_transfer();
 		HAL_Delay(250);
