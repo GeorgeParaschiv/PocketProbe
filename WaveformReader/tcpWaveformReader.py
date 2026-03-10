@@ -36,7 +36,7 @@ def convert(data):
 
 
 class TCPWaveformReader:
-    def __init__(self, frame_size, max_queue=10, retry_interval=2):
+    def __init__(self, frame_size, max_queue=10, retry_interval=1):
         self.frame_size = frame_size
         self.queue = queue.Queue(maxsize=max_queue)
         self._stop_event = threading.Event()
@@ -50,10 +50,12 @@ class TCPWaveformReader:
         self._wifi_ssid = WIFI_SSID
         self._wifi_password = WIFI_PASSWORD
         self._user_disconnected = True
-        self._thread = threading.Thread(target=self._reader_thread, daemon=True)
+        self._wifi_succeeded = False
+        self._tcp_retries = 0
+        self._thread = threading.Thread(target=self._readerThread, daemon=True)
         self._thread.start()
 
-    def connect_wifi(self, ssid=None, password=None):
+    def connectWifi(self, ssid=None, password=None):
         """Start WiFi connection to ESP32 AP in a background thread."""
         if self._wifi_connecting:
             return
@@ -62,17 +64,20 @@ class TCPWaveformReader:
         if password is not None:
             self._wifi_password = password
         self._user_disconnected = False
+        self._wifi_succeeded = False
+        self._tcp_retries = 0
         self._wifi_connecting = True
         self._wifi_result = None
-        t = threading.Thread(target=self._wifi_connect_thread, daemon=True)
+        t = threading.Thread(target=self._wifiConnectThread, daemon=True)
         t.start()
 
-    def user_disconnect(self):
-        """Disconnect and stop auto-reconnect until connect_wifi is called again."""
+    def userDisconnect(self):
+        """Disconnect and stop auto-reconnect until connectWifi is called again."""
         self._user_disconnected = True
+        self._wifi_succeeded = False
         self._disconnect("Disconnected by user")
 
-    def get_wifi_result(self):
+    def getWifiResult(self):
         """Poll for WiFi connection result. Returns (success, message) or None if still in progress."""
         result = self._wifi_result
         if result is not None:
@@ -80,10 +85,19 @@ class TCPWaveformReader:
         return result
 
     @property
-    def wifi_connecting(self):
+    def wifiConnecting(self):
         return self._wifi_connecting
 
-    def _wifi_connect_thread(self):
+    @property
+    def connected(self):
+        return self._connected
+
+    @property
+    def autoConnecting(self):
+        """True when WiFi succeeded and TCP is still trying to connect."""
+        return self._wifi_succeeded and not self._connected
+
+    def _wifiConnectThread(self):
         try:
             subprocess.run(
                 ["netsh", "wlan", "disconnect"],
@@ -91,10 +105,11 @@ class TCPWaveformReader:
             )
             time.sleep(1)
 
-            self._ensure_wifi_profile()
+            self._ensureWifiProfile()
 
             result = subprocess.run(
-                ["netsh", "wlan", "connect", f"name={self._wifi_ssid}"],
+                ["netsh", "wlan", "connect", f"name={self._wifi_ssid}",
+                 f"ssid={self._wifi_ssid}"],
                 capture_output=True, text=True, timeout=15
             )
             print(f"netsh connect stdout: {result.stdout.strip()}")
@@ -102,17 +117,21 @@ class TCPWaveformReader:
 
             if "successfully" in result.stdout.lower():
                 time.sleep(2)
-                self._wifi_result = (True, "WiFi Connected")
+                self._wifi_succeeded = True
+                self._wifi_result = (True, "WiFi connected")
             else:
-                self._wifi_result = (False, "WiFi Failed — Is Device On?")
+                self._user_disconnected = True
+                self._wifi_result = (False, "WiFi failed — is device on?")
         except subprocess.TimeoutExpired:
-            self._wifi_result = (False, "WiFi Timed Out")
+            self._user_disconnected = True
+            self._wifi_result = (False, "WiFi timed out")
         except Exception as e:
+            self._user_disconnected = True
             self._wifi_result = (False, str(e))
         finally:
             self._wifi_connecting = False
 
-    def _ensure_wifi_profile(self):
+    def _ensureWifiProfile(self):
         check = subprocess.run(
             ["netsh", "wlan", "show", "profile", self._wifi_ssid],
             capture_output=True, text=True, timeout=10
@@ -136,32 +155,56 @@ class TCPWaveformReader:
         tmp = os.path.join(os.environ.get("TEMP", "."), "esp_ap_profile.xml")
         with open(tmp, "w") as f:
             f.write(profile_xml)
+
         result = subprocess.run(
             ["netsh", "wlan", "add", "profile", f"filename={tmp}"],
             capture_output=True, text=True, timeout=10
         )
-        print(f"netsh add profile: {result.stdout.strip()}")
+        out = result.stdout.strip()
+        print(f"netsh add profile: {out}")
+
+        if "denied" in out.lower() or "used" not in out.lower():
+            print("Profile add may need admin — retrying elevated")
+            try:
+                import ctypes
+                ctypes.windll.shell32.ShellExecuteW(
+                    None, "runas", "netsh",
+                    f'wlan add profile filename="{tmp}"', None, 0
+                )
+                time.sleep(3)
+            except Exception as e:
+                print(f"Elevated profile add failed: {e}")
+
         try:
             os.remove(tmp)
         except OSError:
             pass
+
+    MAX_TCP_RETRIES = 2
 
     def _connect(self):
         while not self._stop_event.is_set() and not self._connected:
             if self._user_disconnected:
                 time.sleep(self.retry_interval)
                 return
+            if self._tcp_retries >= self.MAX_TCP_RETRIES:
+                print("TCP failed — WiFi may be down")
+                self._wifi_succeeded = False
+                self._user_disconnected = True
+                self._tcp_retries = 0
+                return
             try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.settimeout(5)
                 sock.connect((TCP_IP, TCP_PORT))
+                sock.settimeout(2)
                 self.sock = sock
                 self._connected = True
+                self._tcp_retries = 0
                 print("TCP Connected")
                 self._was_ever_connected = True
             except Exception:
-                if not self._was_ever_connected:
-                    pass
+                self._tcp_retries += 1
                 time.sleep(self.retry_interval)
 
     def _disconnect(self, msg="TCP Lost, Reconnecting..."):
@@ -175,13 +218,13 @@ class TCPWaveformReader:
                 pass
             self.sock = None
 
-    def _reader_thread(self):
+    def _readerThread(self):
         while not self._stop_event.is_set():
             if not self._connected or self.sock is None:
                 self._connect()
                 continue
             try:
-                header = self._recv_exact(2)
+                header = self._recvExact(2)
                 if header is None or len(header) != 2:
                     self._disconnect()
                     continue
@@ -189,7 +232,7 @@ class TCPWaveformReader:
                 msg_len = struct.unpack('>H', header)[0]
 
                 if msg_len == self.frame_size * 2:
-                    raw_bytes = self._recv_exact(msg_len)
+                    raw_bytes = self._recvExact(msg_len)
                     if raw_bytes is not None and len(raw_bytes) == msg_len:
                         samples = [
                             convert(val)
@@ -203,7 +246,7 @@ class TCPWaveformReader:
                         self._disconnect()
 
                 elif msg_len == 2:
-                    batt_bytes = self._recv_exact(2)
+                    batt_bytes = self._recvExact(2)
                     if batt_bytes is not None and len(batt_bytes) == 2:
                         status = batt_bytes[0]
                         percentage = batt_bytes[1]
@@ -216,7 +259,7 @@ class TCPWaveformReader:
 
                 else:
                     print(f"Unknown message length: {msg_len}, skipping")
-                    skip = self._recv_exact(msg_len)
+                    skip = self._recvExact(msg_len)
                     if skip is None:
                         self._disconnect()
 
@@ -224,26 +267,35 @@ class TCPWaveformReader:
                 self._disconnect()
                 time.sleep(self.retry_interval)
 
-    def _recv_exact(self, n):
+    MAX_RECV_TIMEOUTS = 2
+
+    def _recvExact(self, n):
         buf = b''
+        timeouts = 0
         while len(buf) < n and self._connected and self.sock:
             try:
                 chunk = self.sock.recv(n - len(buf))
                 if not chunk:
                     return None
                 buf += chunk
+                timeouts = 0
+            except socket.timeout:
+                timeouts += 1
+                if timeouts >= self.MAX_RECV_TIMEOUTS:
+                    return None
+                continue
             except Exception:
                 return None
         return buf if len(buf) == n else None
 
-    def get_latest_samples(self):
+    def getLatestSamples(self):
         """Return the oldest frame in the queue, or None if none available."""
         try:
             return self.queue.get_nowait()
         except queue.Empty:
             return None
 
-    def send_packet(self, pkt):
+    def sendPacket(self, pkt):
         if self._connected and self.sock:
             try:
                 self.sock.sendall(pkt)

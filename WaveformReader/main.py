@@ -63,7 +63,7 @@ def main():
     app = QApplication(sys.argv)
     apply_stylesheet(app)
     window = scopeGUI(2000)  # 2000 points per frame (trigger extracts 1000 for display)
-    window.show()
+    window.showMaximized()
     sys.exit(app.exec_())
 
 if __name__ == "__main__":

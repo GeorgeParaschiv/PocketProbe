@@ -18,18 +18,18 @@ class CursorManager(QObject):
         for pair in self.cursors.values():
             self.plot_widget.addItem(pair['x'])
             self.plot_widget.addItem(pair['y'])
-        self.set_cursor_visibility('1', False)
-        self.set_cursor_visibility('2', False)
+        self.setCursorVisibility('1', False)
+        self.setCursorVisibility('2', False)
         self._dragging_cursor = None
         self._dragging_axis = None
         self.plot_widget.scene().installEventFilter(self)
 
-    def set_cursor_visibility(self, name, visible):
+    def setCursorVisibility(self, name, visible):
         if name in self.cursors:
             self.cursors[name]['x'].setVisible(visible)
             self.cursors[name]['y'].setVisible(visible)
 
-    def get_cursor_values(self):
+    def getCursorValues(self):
         c1 = self.cursors['1']
         c2 = self.cursors['2']
         return {
@@ -41,7 +41,7 @@ class CursorManager(QObject):
             'Δy': abs(c2['y'].value() - c1['y'].value()),
         }
 
-    def bring_cursor_to_center(self, cursor_name):
+    def bringCursorToCenter(self, cursor_name):
         plot_item = self.plot_widget.plotItem
         x_range = plot_item.viewRange()[0]
         y_range = plot_item.viewRange()[1]

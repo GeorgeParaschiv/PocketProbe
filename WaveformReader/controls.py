@@ -72,16 +72,16 @@ class ControlPanel:
 
         self.vert_off_left_btn = QPushButton("◀")
         self.vert_off_left_btn.setFixedWidth(30)
-        self.vert_off_left_btn.clicked.connect(self._nudge_vert_offset(-1))
+        self.vert_off_left_btn.clicked.connect(self._nudgeVertOffset(-1))
         voffset_row.addWidget(self.vert_off_left_btn)
 
         self.vert_off_right_btn = QPushButton("▶")
         self.vert_off_right_btn.setFixedWidth(30)
-        self.vert_off_right_btn.clicked.connect(self._nudge_vert_offset(1))
+        self.vert_off_right_btn.clicked.connect(self._nudgeVertOffset(1))
         voffset_row.addWidget(self.vert_off_right_btn)
 
         self.vert_zero_btn = QPushButton("Zero")
-        self.vert_zero_btn.clicked.connect(self._on_vert_zero_clicked)
+        self.vert_zero_btn.clicked.connect(self._onVertZeroClicked)
         voffset_row.addWidget(self.vert_zero_btn)
 
         self.layout.addLayout(voffset_row)
@@ -130,7 +130,7 @@ class ControlPanel:
 
         self.trigger_level_down_btn = QPushButton("▼")
         self.trigger_level_down_btn.setMaximumWidth(30)
-        self.trigger_level_down_btn.clicked.connect(self._on_trigger_level_down)
+        self.trigger_level_down_btn.clicked.connect(self._onTriggerLevelDown)
         trigger_level_row.addWidget(self.trigger_level_down_btn)
 
         self.trigger_level_value_label = QLabel("0mV")
@@ -140,11 +140,11 @@ class ControlPanel:
 
         self.trigger_level_up_btn = QPushButton("▲")
         self.trigger_level_up_btn.setMaximumWidth(30)
-        self.trigger_level_up_btn.clicked.connect(self._on_trigger_level_up)
+        self.trigger_level_up_btn.clicked.connect(self._onTriggerLevelUp)
         trigger_level_row.addWidget(self.trigger_level_up_btn)
 
         self.trigger_level_zero_btn = QPushButton("Zero")
-        self.trigger_level_zero_btn.clicked.connect(self._on_trigger_level_zero)
+        self.trigger_level_zero_btn.clicked.connect(self._onTriggerLevelZero)
         trigger_level_row.addWidget(self.trigger_level_zero_btn)
 
         self.layout.addLayout(trigger_level_row)
@@ -157,23 +157,23 @@ class ControlPanel:
         self._prev_horz_knob = self.horz_knob.value()
         self._prev_vert_off = self.vert_off_slider.value()
         self._committed_vert_offset = self.vert_off_slider.value()
-        self.voltage_multiplier = self._calc_multiplier(self.vert_knob.value())
+        self.voltage_multiplier = self._calcMultiplier(self.vert_knob.value())
 
-        self.vert_knob.valueChanged.connect(self._on_vert_knob_changed)
-        self.horz_knob.valueChanged.connect(self._on_horz_knob_changed)
-        self.vert_off_slider.sliderReleased.connect(self._on_vert_off_released)
+        self.vert_knob.valueChanged.connect(self._onVertKnobChanged)
+        self.horz_knob.valueChanged.connect(self._onHorzKnobChanged)
+        self.vert_off_slider.sliderReleased.connect(self.onVertOffReleased)
 
     # ── Helpers ──────────────────────────────────────────────────────────
 
     @staticmethod
-    def _parse_voltage_label(label):
+    def _parseVoltageLabel(label):
         """Parse a voltbase label like '100mV' or '2V' into volts."""
         if label.endswith("mV"):
             return float(label[:-2]) * 1e-3
         return float(label[:-1])
 
     @staticmethod
-    def _parse_time_label(label):
+    def _parseTimeLabel(label):
         """Parse a timebase label like '50μs' or '10ms' into seconds."""
         if "μs" in label:
             return float(label.replace("μs", "")) * 1e-6
@@ -181,13 +181,13 @@ class ControlPanel:
             return float(label.replace("ms", "")) * 1e-3
         return float(label)
 
-    def _label_to_mv(self, val):
+    def _labelToMv(self, val):
         label = self.voltbase_labels[val]
-        return int(self._parse_voltage_label(label) * 1000)
+        return int(self._parseVoltageLabel(label) * 1000)
 
-    def _calc_multiplier(self, val):
+    def _calcMultiplier(self, val):
         """Hardware gain multiplier based on knob position (mirrors STM32 thresholds)."""
-        mv = self._label_to_mv(val)
+        mv = self._labelToMv(val)
         if mv <= 100:
             return 10
         if mv <= 500:
@@ -196,52 +196,52 @@ class ControlPanel:
             return 2
         return 1
 
-    def _timebase_to_us(self, idx):
+    def _timebaseToUs(self, idx):
         """Convert timebase knob index to the sample-rate divisor sent to STM32."""
         label = self.timebase_labels[idx]
-        us = int(self._parse_time_label(label) * 1e6)
+        us = int(self._parseTimeLabel(label) * 1e6)
         return 1 if us <= 5 else us // 5
 
-    def _nudge_vert_offset(self, direction):
+    def _nudgeVertOffset(self, direction):
         """Return a slot that nudges the vertical offset slider by ±1 and sends."""
         def _slot():
             s = self.vert_off_slider
             s.setValue(max(s.minimum(), min(s.maximum(), s.value() + direction)))
-            self._on_vert_off_released()
+            self.onVertOffReleased()
         return _slot
 
     # ── Knob / slider callbacks ──────────────────────────────────────────
 
-    def _on_vert_knob_changed(self, val):
+    def _onVertKnobChanged(self, val):
         if val != self._prev_vert_knob:
             self._prev_vert_knob = val
-            self.voltage_multiplier = self._calc_multiplier(val)
-            self.signals.value_changed.emit(self.OP_MAP['V'], self._label_to_mv(val))
+            self.voltage_multiplier = self._calcMultiplier(val)
+            self.signals.value_changed.emit(self.OP_MAP['V'], self._labelToMv(val))
 
-    def _on_horz_knob_changed(self, val):
+    def _onHorzKnobChanged(self, val):
         if val != self._prev_horz_knob:
             self._prev_horz_knob = val
-            self.signals.value_changed.emit(self.OP_MAP['T'], self._timebase_to_us(val))
+            self.signals.value_changed.emit(self.OP_MAP['T'], self._timebaseToUs(val))
 
-    def _send_offset_command(self, val):
+    def _sendOffsetCommand(self, val):
         self._prev_vert_off = val
         self._committed_vert_offset = val
         encoded = val + 85
         print(f"Offset: {val} DAC steps ({val * 12.0:.1f}mV), encoded: {encoded}")
         self.signals.value_changed.emit(self.OP_MAP['O'], encoded)
 
-    def _on_vert_zero_clicked(self):
+    def _onVertZeroClicked(self):
         self.vert_off_slider.setValue(0)
-        self._send_offset_command(0)
+        self._sendOffsetCommand(0)
 
-    def _on_vert_off_released(self):
+    def onVertOffReleased(self):
         val = self.vert_off_slider.value()
         if val != self._prev_vert_off:
-            self._send_offset_command(val)
+            self._sendOffsetCommand(val)
 
     # ── Trigger callbacks ────────────────────────────────────────────────
 
-    def _update_trigger_level_label(self):
+    def updateTriggerLevelLabel(self):
         mv = self._trigger_level_mv
         if abs(mv) >= 1000:
             self.trigger_level_value_label.setText(f"{mv / 1000.0:.2f}V")
@@ -249,26 +249,26 @@ class ControlPanel:
             sign = "+" if mv > 0 else ""
             self.trigger_level_value_label.setText(f"{sign}{mv}mV")
 
-    def _on_trigger_level_up(self):
+    def _onTriggerLevelUp(self):
         self._trigger_level_mv += self._trigger_level_step_mv
-        self._update_trigger_level_label()
+        self.updateTriggerLevelLabel()
 
-    def _on_trigger_level_down(self):
+    def _onTriggerLevelDown(self):
         self._trigger_level_mv -= self._trigger_level_step_mv
-        self._update_trigger_level_label()
+        self.updateTriggerLevelLabel()
 
-    def _on_trigger_level_zero(self):
+    def _onTriggerLevelZero(self):
         self._trigger_level_mv = 0
-        self._update_trigger_level_label()
+        self.updateTriggerLevelLabel()
 
     # ── Public API ───────────────────────────────────────────────────────
 
-    def on_knob_change(self, callback):
+    def onKnobChange(self, callback):
         self.signals.value_changed.connect(callback)
 
-    def send_all_settings(self):
-        self.signals.value_changed.emit(self.OP_MAP['V'], self._label_to_mv(self.vert_knob.value()))
-        self.signals.value_changed.emit(self.OP_MAP['T'], self._timebase_to_us(self.horz_knob.value()))
+    def sendAllSettings(self):
+        self.signals.value_changed.emit(self.OP_MAP['V'], self._labelToMv(self.vert_knob.value()))
+        self.signals.value_changed.emit(self.OP_MAP['T'], self._timebaseToUs(self.horz_knob.value()))
         self.signals.value_changed.emit(self.OP_MAP['O'], self.vert_off_slider.value() + 85)
 
     def getDivisionLabels(self):
@@ -283,16 +283,16 @@ class ControlPanel:
         return self.mode_select.currentText()
 
     def getHorizontalDiv(self):
-        return self._parse_time_label(self.timebase_labels[self.horz_knob.value()])
+        return self._parseTimeLabel(self.timebase_labels[self.horz_knob.value()])
 
     def getHorizontalDivFromIndex(self, idx):
-        return self._parse_time_label(self.timebase_labels[idx])
+        return self._parseTimeLabel(self.timebase_labels[idx])
 
     def getVerticalDiv(self):
-        return self._parse_voltage_label(self.voltbase_labels[self.vert_knob.value()])
+        return self._parseVoltageLabel(self.voltbase_labels[self.vert_knob.value()])
 
     def getVerticalDivFromIndex(self, idx):
-        return self._parse_voltage_label(self.voltbase_labels[idx])
+        return self._parseVoltageLabel(self.voltbase_labels[idx])
 
     def getVertOffset(self):
         voltage_mv = self.vert_off_slider.value() * 12.0

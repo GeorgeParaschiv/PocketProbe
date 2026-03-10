@@ -13,11 +13,11 @@ class MeasurementManager:
         self.latest_x = None
         self.latest_y = None
 
-    def update_data(self, x, y):
+    def updateData(self, x, y):
         self.latest_x = np.asarray(x)
         self.latest_y = np.asarray(y)
 
-    def get_measurements(self):
+    def getMeasurements(self):
         if self.latest_y is None or self.latest_x is None:
             return {}
         return {
@@ -25,11 +25,11 @@ class MeasurementManager:
             "Max":       np.max(self.latest_y),
             "Min":       np.min(self.latest_y),
             "Mean":      np.mean(self.latest_y),
-            "Frequency": self._estimate_frequency(self.latest_x, self.latest_y),
+            "Frequency": self.estimateFrequency(self.latest_x, self.latest_y),
         }
 
     @staticmethod
-    def _estimate_frequency(x, y):
+    def estimateFrequency(x, y):
         y = np.asarray(y)
         x = np.asarray(x)
         if len(y) < 2 or len(x) < 2:
@@ -58,7 +58,7 @@ class MeasurementPanel(QWidget):
         self.cursor_toggle_1 = QCheckBox("Show Cursor 1")
         self.cursor_toggle_1.setChecked(False)
         self.cursor_toggle_1.stateChanged.connect(
-            lambda s: self.cursor_mgr.set_cursor_visibility('1', s == Qt.Checked)
+            lambda s: self.cursor_mgr.setCursorVisibility('1', s == Qt.Checked)
         )
         cursor_col.addWidget(self.cursor_toggle_1)
 
@@ -69,12 +69,12 @@ class MeasurementPanel(QWidget):
         self.cursor_toggle_2 = QCheckBox("Show Cursor 2")
         self.cursor_toggle_2.setChecked(False)
         self.cursor_toggle_2.stateChanged.connect(
-            lambda s: self.cursor_mgr.set_cursor_visibility('2', s == Qt.Checked)
+            lambda s: self.cursor_mgr.setCursorVisibility('2', s == Qt.Checked)
         )
         cursor_col.addWidget(self.cursor_toggle_2)
 
         self.center_btn_2 = QPushButton("Bring Cursor 2 to Center")
-        self.center_btn_2.clicked.connect(lambda: self.cursor_mgr.bring_cursor_to_center('2'))
+        self.center_btn_2.clicked.connect(lambda: self.cursor_mgr.bringCursorToCenter('2'))
         cursor_col.addWidget(self.center_btn_2)
 
         self.cursor_values_widget = QWidget()
@@ -105,7 +105,7 @@ class MeasurementPanel(QWidget):
         meas_col.addWidget(self.measurement_dropdown)
 
         self.add_button = QPushButton("Add Measurement")
-        self.add_button.clicked.connect(self.add_measurement)
+        self.add_button.clicked.connect(self.addMeasurement)
         meas_col.addWidget(self.add_button)
 
         self.measurement_list = QListWidget()
@@ -117,7 +117,7 @@ class MeasurementPanel(QWidget):
 
     # ── Add / remove measurements ────────────────────────────────────────
 
-    def add_measurement(self):
+    def addMeasurement(self):
         key = self.measurement_dropdown.currentText()
         if key in self.active_measurements:
             return
@@ -164,24 +164,24 @@ class MeasurementPanel(QWidget):
 
     # ── Display update ───────────────────────────────────────────────────
 
-    def update_display(self):
-        cursor_values = self.cursor_mgr.get_cursor_values()
-        lines = [self._format_cursor_value(k, v) for k, v in cursor_values.items()]
+    def updateDisplay(self):
+        cursor_values = self.cursor_mgr.getCursorValues()
+        lines = [self._formatCursorValue(k, v) for k, v in cursor_values.items()]
         self.cursor_values_label.setText("Cursor Values:\n" + "\n".join(lines))
 
-        stats = self.mm.get_measurements()
+        stats = self.mm.getMeasurements()
         for i in range(self.measurement_list.count()):
             widget = self.measurement_list.itemWidget(self.measurement_list.item(i))
             label_widget = widget.layout().itemAt(0).widget()
             name = label_widget.layout().itemAt(0).widget().text()
             value_lbl = label_widget.layout().itemAt(1).widget()
             if name in stats:
-                value_lbl.setText(self._format_measurement(name, stats[name]))
+                value_lbl.setText(self._formatMeasurement(name, stats[name]))
 
     # ── Formatting ───────────────────────────────────────────────────────
 
     @staticmethod
-    def _format_voltage(value):
+    def _formatVoltage(value):
         if abs(value) >= 1:
             return f"{value:.3f} V"
         if value == 0:
@@ -189,7 +189,7 @@ class MeasurementPanel(QWidget):
         return f"{value*1e3:.3f} mV"
 
     @staticmethod
-    def _format_time(value):
+    def _formatTime(value):
         a = abs(value)
         if a == 0:
             return "0"
@@ -200,13 +200,13 @@ class MeasurementPanel(QWidget):
         return f"{value:.3e} s"
 
     @classmethod
-    def _format_cursor_value(cls, key, value):
+    def _formatCursorValue(cls, key, value):
         if key in ('X1', 'X2', 'Δx'):
-            return f"{key}: {cls._format_time(value)}"
-        return f"{key}: {cls._format_voltage(value)}"
+            return f"{key}: {cls._formatTime(value)}"
+        return f"{key}: {cls._formatVoltage(value)}"
 
     @classmethod
-    def _format_measurement(cls, key, value):
+    def _formatMeasurement(cls, key, value):
         if key == "Frequency":
             if value == 0:
                 return "N/A"
@@ -215,4 +215,4 @@ class MeasurementPanel(QWidget):
             if value >= 1e3:
                 return f"{value/1e3:.3f} kHz"
             return f"{value:.3f} Hz"
-        return cls._format_voltage(value)
+        return cls._formatVoltage(value)

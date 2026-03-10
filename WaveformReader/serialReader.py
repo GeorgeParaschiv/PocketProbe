@@ -20,10 +20,10 @@ class SerialWaveformReader:
         self.frame_size = frame_size
         self.queue = queue.Queue(maxsize=max_queue)
         self._stop_event = threading.Event()
-        self._thread = threading.Thread(target=self._reader_thread, daemon=True)
+        self._thread = threading.Thread(target=self._readerThread, daemon=True)
         self._thread.start()
 
-    def _reader_thread(self):
+    def _readerThread(self):
         while not self._stop_event.is_set():
             # Wait for start-of-frame marker 'S'
             try:
@@ -47,7 +47,7 @@ class SerialWaveformReader:
             except Exception:
                 pass
 
-    def get_latest_samples(self):
+    def getLatestSamples(self):
         """Return the oldest frame in the queue, or None if none available."""
         try:
             return self.queue.get_nowait()

@@ -56,10 +56,10 @@ class WaveformPlot(pg.PlotWidget):
         self.plotItem.addItem(self.horz_offset_arrow)
 
         # Scroll-wheel on axes adjusts knobs
-        self.plotItem.getAxis('bottom').wheelEvent = self._axis_wheel('horz_knob')
-        self.plotItem.getAxis('left').wheelEvent = self._axis_wheel('vert_knob')
+        self.plotItem.getAxis('bottom').wheelEvent = self._axisWheel('horz_knob')
+        self.plotItem.getAxis('left').wheelEvent = self._axisWheel('vert_knob')
 
-    def _axis_wheel(self, knob_attr):
+    def _axisWheel(self, knob_attr):
         """Return a wheel-event handler that nudges the named knob by ±1."""
         def handler(event):
             knob = getattr(self.control, knob_attr, None)
@@ -98,7 +98,7 @@ class WaveformPlot(pg.PlotWidget):
 
     # ── Main update ──────────────────────────────────────────────────────
 
-    def update_waveform(self, waveform):
+    def updateWaveform(self, waveform):
         hDiv = self.control.getHorizontalDiv()
         vDiv = self.control.getVerticalDiv()
         vOffset = self.control.getVertOffsetValue()
