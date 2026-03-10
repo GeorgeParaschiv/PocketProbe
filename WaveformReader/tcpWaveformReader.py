@@ -11,8 +11,12 @@ TCP_PORT = 8080
 GPIO_MASK = 0x0FFF  # 12-bit mask
 VREF = 1.5
 
-WIFI_SSID = "PocketProbe2"
-WIFI_PASSWORD = "starlight123"
+WIFI_OPTIONS = [
+    ("PocketProbe", "starlight123"),
+    ("PocketProbe2", "starlight123"),
+]
+WIFI_SSID = WIFI_OPTIONS[0][0]
+WIFI_PASSWORD = WIFI_OPTIONS[0][1]
 
 def convert(data):
     """Convert raw ADC data to a normalized value (before gain/offset processing)"""
@@ -43,17 +47,30 @@ class TCPWaveformReader:
         self.battery_info = None
         self._wifi_connecting = False
         self._wifi_result = None  # (success: bool, message: str) or None
+        self._wifi_ssid = WIFI_SSID
+        self._wifi_password = WIFI_PASSWORD
+        self._user_disconnected = True
         self._thread = threading.Thread(target=self._reader_thread, daemon=True)
         self._thread.start()
 
-    def connect_wifi(self):
+    def connect_wifi(self, ssid=None, password=None):
         """Start WiFi connection to ESP32 AP in a background thread."""
         if self._wifi_connecting:
             return
+        if ssid is not None:
+            self._wifi_ssid = ssid
+        if password is not None:
+            self._wifi_password = password
+        self._user_disconnected = False
         self._wifi_connecting = True
         self._wifi_result = None
         t = threading.Thread(target=self._wifi_connect_thread, daemon=True)
         t.start()
+
+    def user_disconnect(self):
+        """Disconnect and stop auto-reconnect until connect_wifi is called again."""
+        self._user_disconnected = True
+        self._disconnect("Disconnected by user")
 
     def get_wifi_result(self):
         """Poll for WiFi connection result. Returns (success, message) or None if still in progress."""
@@ -77,7 +94,7 @@ class TCPWaveformReader:
             self._ensure_wifi_profile()
 
             result = subprocess.run(
-                ["netsh", "wlan", "connect", f"name={WIFI_SSID}"],
+                ["netsh", "wlan", "connect", f"name={self._wifi_ssid}"],
                 capture_output=True, text=True, timeout=15
             )
             print(f"netsh connect stdout: {result.stdout.strip()}")
@@ -85,11 +102,11 @@ class TCPWaveformReader:
 
             if "successfully" in result.stdout.lower():
                 time.sleep(2)
-                self._wifi_result = (True, "Connected to esp_ap")
+                self._wifi_result = (True, "WiFi Connected")
             else:
-                self._wifi_result = (False, "WiFi connect failed — is esp_ap powered on?")
+                self._wifi_result = (False, "WiFi Failed — Is Device On?")
         except subprocess.TimeoutExpired:
-            self._wifi_result = (False, "WiFi connect timed out")
+            self._wifi_result = (False, "WiFi Timed Out")
         except Exception as e:
             self._wifi_result = (False, str(e))
         finally:
@@ -97,23 +114,23 @@ class TCPWaveformReader:
 
     def _ensure_wifi_profile(self):
         check = subprocess.run(
-            ["netsh", "wlan", "show", "profile", WIFI_SSID],
+            ["netsh", "wlan", "show", "profile", self._wifi_ssid],
             capture_output=True, text=True, timeout=10
         )
-        if WIFI_SSID in check.stdout:
+        if self._wifi_ssid in check.stdout:
             return
 
         profile_xml = f"""<?xml version="1.0"?>
 <WLANProfile xmlns="http://www.microsoft.com/networking/WLAN/profile/v1">
-    <name>{WIFI_SSID}</name>
-    <SSIDConfig><SSID><name>{WIFI_SSID}</name></SSID></SSIDConfig>
+    <name>{self._wifi_ssid}</name>
+    <SSIDConfig><SSID><name>{self._wifi_ssid}</name></SSID></SSIDConfig>
     <connectionType>ESS</connectionType>
     <connectionMode>manual</connectionMode>
     <MSM><security>
         <authEncryption><authentication>WPA2PSK</authentication>
             <encryption>AES</encryption><useOneX>false</useOneX></authEncryption>
         <sharedKey><keyType>passPhrase</keyType>
-            <protected>false</protected><keyMaterial>{WIFI_PASSWORD}</keyMaterial></sharedKey>
+            <protected>false</protected><keyMaterial>{self._wifi_password}</keyMaterial></sharedKey>
     </security></MSM>
 </WLANProfile>"""
         tmp = os.path.join(os.environ.get("TEMP", "."), "esp_ap_profile.xml")
@@ -131,20 +148,23 @@ class TCPWaveformReader:
 
     def _connect(self):
         while not self._stop_event.is_set() and not self._connected:
+            if self._user_disconnected:
+                time.sleep(self.retry_interval)
+                return
             try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.settimeout(5)
                 sock.connect((TCP_IP, TCP_PORT))
                 self.sock = sock
                 self._connected = True
-                print("TCP connection established.")
+                print("TCP Connected")
                 self._was_ever_connected = True
             except Exception:
                 if not self._was_ever_connected:
                     pass
                 time.sleep(self.retry_interval)
 
-    def _disconnect(self, msg="TCP connection lost. Reconnecting..."):
+    def _disconnect(self, msg="TCP Lost, Reconnecting..."):
         if self._connected:
             print(msg)
         self._connected = False

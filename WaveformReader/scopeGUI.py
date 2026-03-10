@@ -1,11 +1,11 @@
-from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QCheckBox, QApplication
+from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QCheckBox, QApplication, QComboBox
 from PyQt5.QtCore import QTimer, Qt, QEvent
 from struct import pack
 
 from plotter import WaveformPlot
 from controls import ControlPanel
 from measurement import MeasurementManager, MeasurementPanel
-from tcpWaveformReader import TCPWaveformReader
+from tcpWaveformReader import TCPWaveformReader, WIFI_OPTIONS
 
 import numpy as np
 import time
@@ -112,9 +112,20 @@ class scopeGUI(QMainWindow):
         self._conn_status_label.setAlignment(Qt.AlignCenter)
         self._set_conn_label("Disconnected", "#FF4444")
         conn_row.addWidget(self._conn_status_label, stretch=1)
+        self._ssid_combo = QComboBox()
+        self._ssid_combo.addItems([opt[0] for opt in WIFI_OPTIONS])
+        self._ssid_combo.setStyleSheet(
+            "QComboBox { background-color: #3c3f41; color: #ccc; border: 1px solid #555;"
+            "border-radius: 4px; padding: 4px 8px; font-size: 11pt; }"
+        )
+        conn_row.addWidget(self._ssid_combo)
         self._conn_btn = QPushButton("Connect WiFi")
         self._conn_btn.clicked.connect(self._on_connect_wifi)
         conn_row.addWidget(self._conn_btn)
+        self._disconn_btn = QPushButton("Disconnect")
+        self._disconn_btn.clicked.connect(self._on_disconnect)
+        self._disconn_btn.setVisible(False)
+        conn_row.addWidget(self._disconn_btn)
         right_layout.addLayout(conn_row)
 
         # Battery indicator
@@ -174,9 +185,19 @@ class scopeGUI(QMainWindow):
     def _on_connect_wifi(self):
         if self.waveform_reader.wifi_connecting:
             return
+        ssid = self._ssid_combo.currentText()
+        password = dict(WIFI_OPTIONS).get(ssid, WIFI_OPTIONS[0][1])
         self._conn_btn.setEnabled(False)
+        self._ssid_combo.setEnabled(False)
         self._set_conn_label("Connecting...", "#FFAA00")
-        self.waveform_reader.connect_wifi()
+        self.waveform_reader.connect_wifi(ssid=ssid, password=password)
+
+    def _on_disconnect(self):
+        self.waveform_reader.user_disconnect()
+        self._set_conn_label("Disconnected", "#FF4444")
+        self._disconn_btn.setVisible(False)
+        self._conn_btn.setVisible(True)
+        self._ssid_combo.setVisible(True)
 
     def _set_conn_label(self, text, color):
         self._conn_status_label.setText(text)
@@ -189,26 +210,31 @@ class scopeGUI(QMainWindow):
         wifi_result = self.waveform_reader.get_wifi_result()
         if wifi_result is not None:
             self._conn_btn.setEnabled(True)
+            self._ssid_combo.setEnabled(True)
             success, message = wifi_result
-            print(f"WiFi: {message}")
+            print(message)
             self._set_conn_label(
-                "WiFi joined — connecting TCP..." if success else message,
+                "Joining TCP..." if success else message,
                 "#FFAA00" if success else "#FF4444",
             )
 
         if self.waveform_reader._connected:
             self._set_conn_label("Connected", "#44FF44")
             self._conn_btn.setVisible(False)
+            self._ssid_combo.setVisible(False)
+            self._disconn_btn.setVisible(True)
         elif not self.waveform_reader.wifi_connecting:
             if self._conn_status_label.text() == "Connected":
                 self._set_conn_label("Disconnected", "#FF4444")
             self._conn_btn.setVisible(True)
+            self._ssid_combo.setVisible(True)
+            self._disconn_btn.setVisible(False)
 
     def _check_and_sync_settings(self):
         self._update_conn_status()
         connected = self.waveform_reader._connected
         if connected and not self._prev_connected:
-            print("Connection established — syncing settings")
+            print("Connected — syncing settings")
             self.control.send_all_settings()
             if self._is_sleeping:
                 self._wake_up()
