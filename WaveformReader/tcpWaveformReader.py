@@ -63,7 +63,6 @@ class TCPWaveformReader:
             self._wifi_ssid = ssid
         if password is not None:
             self._wifi_password = password
-        self._user_disconnected = False
         self._wifi_succeeded = False
         self._tcp_retries = 0
         self._wifi_connecting = True
@@ -118,15 +117,13 @@ class TCPWaveformReader:
             if "successfully" in result.stdout.lower():
                 time.sleep(2)
                 self._wifi_succeeded = True
+                self._user_disconnected = False
                 self._wifi_result = (True, "WiFi connected")
             else:
-                self._user_disconnected = True
                 self._wifi_result = (False, "WiFi failed — is device on?")
         except subprocess.TimeoutExpired:
-            self._user_disconnected = True
             self._wifi_result = (False, "WiFi timed out")
         except Exception as e:
-            self._user_disconnected = True
             self._wifi_result = (False, str(e))
         finally:
             self._wifi_connecting = False
